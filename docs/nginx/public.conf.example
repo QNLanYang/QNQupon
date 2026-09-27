@@ -1,0 +1,45 @@
+# 对外入口示例 —— 只暴露公开路径，管理后台不对外
+#
+# 用法：include 进 nginx.conf 的 http{} 块（不是 server{} 内），例如：
+#   http { include /etc/nginx/conf.d/qnqupon-public.conf; }
+# 改掉 server_name 后使用，详细部署步骤见 docs/DEPLOYMENT.md。
+# 把服务暴露到公网的方式（端口、TLS、隧道、CDN）由你决定，本文件只约定「放行什么」。
+
+# 粗限流：按反代看到的客户端 IP 计数（配合应用侧 TRUST_PROXY=127.0.0.1）。经 CDN 或隧道时
+# 该地址是那层进程的回环地址、全站共用一个桶，计数键可改用该层写入的客户端头（如 $http_cf_connecting_ip）。
+# 更精细的限流（核销、查券、登录等按 IP/账号分别计数）在应用层，依赖下面的 XFF 写法生效。
+limit_req_zone $binary_remote_addr zone=qnqupon_public:10m rate=1r/s;
+
+server {
+    listen 80;
+    server_name example.com;                        # 改成你的公开域名
+
+    server_tokens off;            # 响应里不暴露 nginx 版本号
+    proxy_hide_header Server;     # 对外隐藏上游的 Server 头
+
+    limit_req zone=qnqupon_public burst=20 nodelay;
+
+    # 只放行公开必需的路径：首页 /、券码核销页 /r/、查券页 /verify、查券接口 /api/verify/、静态资源 /assets/
+    location ~ ^/(r/|verify$|api/verify/|assets/|$) {
+        proxy_pass http://127.0.0.1:3100;
+        proxy_http_version 1.1;
+
+        # 必须透传 Host：应用的 ADMIN_HOSTS 白名单靠它判断请求域名
+        proxy_set_header Host $host;
+
+        # 覆盖式写入客户端 IP（注意不是 $proxy_add_x_forwarded_for 的追加式，追加式可被伪造）：
+        # 直连时 $remote_addr 冲掉客户端自带的伪造 XFF 后就是真实客户端；
+        # 前面还有 CDN 或隧道（如 cloudflared）时它只是那层进程的回环地址，改用该层
+        # 在边缘写入的客户端头，例如 Cloudflare（其重写过的 $http_x_forwarded_for 也可）：
+        #   proxy_set_header X-Forwarded-For $http_cf_connecting_ip;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+
+    # 后台与健康检查不对外
+    location = /admin   { return 404; }
+    location ^~ /admin/ { return 404; }
+    location = /healthz { return 404; }
+
+    # 兜底：白名单之外的任何路径一律 404
+    location / { return 404; }
+}

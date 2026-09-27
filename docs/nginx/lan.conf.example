@@ -1,0 +1,46 @@
+# 管理后台入口示例（内网 / 受限网络）
+#
+# 管理后台建议只在内网可达：用网段 allow/deny 或防火墙限制来源。
+# 用法：把本文件 include 进 nginx.conf 的 http{} 块（不是 server{} 内），例如：
+#   http { include /etc/nginx/conf.d/qnqupon-admin.conf; }
+# 改掉 server_name、网段与证书路径后使用；证书生成见 docs/DEPLOYMENT.md（openssl 自签一条命令）。
+
+# 粗限流：整站按来源 IP 限一下；
+# 敏感操作（改密码、重置密码、测试发信、立即备份等）在应用层另有更严格的限流。
+limit_req_zone $binary_remote_addr zone=qnqupon_admin:10m rate=10r/s;
+
+server {
+    listen 443 ssl;
+    server_name admin.example.com;                  # 改成你的后台域名（从其他机器访问后台时，须与应用 ADMIN_HOSTS 一致；本机 localhost/127.0.0.1 恒放行无需配置）
+    server_tokens off;                               # 响应里不暴露 nginx 版本号
+    proxy_hide_header Server;                        # 对外隐藏上游的 Server 头
+
+    ssl_certificate     /etc/nginx/admin.example.com.crt;   # 自签即可，内部使用浏览器告警可接受
+    ssl_certificate_key /etc/nginx/admin.example.com.key;
+
+    # 只允许内网网段访问管理入口（改成你自己的网段）
+    allow 127.0.0.1;
+    allow 192.168.1.0/24;
+    deny  all;
+
+    limit_req zone=qnqupon_admin burst=60 nodelay;
+
+    location / {
+        proxy_pass http://127.0.0.1:3100;
+        proxy_http_version 1.1;
+
+        # 必须透传 Host：应用的 ADMIN_HOSTS 白名单靠它判断请求域名，丢了就全站 404
+        proxy_set_header Host $host;
+
+        # 覆盖式写入客户端 IP（不是 $proxy_add_x_forwarded_for 的追加式）：
+        # 用 $remote_addr 覆盖，冲掉客户端自己带的伪造 XFF；应用侧 TRUST_PROXY=127.0.0.1 只信本机入口
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+}
+
+# 可选：把 80 端口跳转到 443
+# server {
+#     listen 80;
+#     server_name admin.example.com;
+#     return 301 https://$host$request_uri;
+# }

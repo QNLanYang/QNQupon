@@ -1,0 +1,9 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-only
+     Copyright (C) 2026 QNLanYang (全能岚漾) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="96" height="96">
+  <g fill="none" stroke-linecap="round">
+    <circle cx="32" cy="32" r="21" stroke="#172033" stroke-width="7.5"/>
+    <line x1="44" y1="44" x2="53" y2="53" stroke="#172033" stroke-width="7.5"/>
+    <path d="M23 40V33a9 9 0 0 1 18 0v7" stroke="#f15b54" stroke-width="6"/>
+  </g>
+</svg>
