@@ -111,6 +111,44 @@ test('券码名称留空：按「券面名 #序号」碰撞取号，能补空缺
   assert.equal(db.createCode(face.id, null, null, actor).name, `${base} #4`, '空缺补完 → 顺延 #4');
 });
 
+test('批量生成券码：编号位数与数量同宽、统一默认隐藏券码名', () => {
+  const face = newFace();
+
+  const nine = db.createCodes(face.id, 9, '员工券', '城南店员工', actor);
+  assert.equal(nine.length, 9);
+  assert.deepEqual(nine.map((c) => c.name), ['员工券 #1', '员工券 #2', '员工券 #3', '员工券 #4', '员工券 #5', '员工券 #6', '员工券 #7', '员工券 #8', '员工券 #9'], '9 张 → 1 位编号');
+  assert.equal(db.codesOf(face.id).length, 9);
+  assert.equal(new Set(nine.map((c) => c.id)).size, 9, '每张券码 ID 唯一');
+  assert.equal(new Set(nine.map((c) => c.token)).size, 9, '每张 token 唯一');
+  assert.ok(nine.every((c) => db.codeDetail(c.id).show_name === 0), '批量生成的券码名统一显式设为「始终隐藏」');
+  assert.ok(nine.every((c) => db.codeDetail(c.id).note === '城南店员工'), '同一批共用备注');
+
+  const twentyFive = db.createCodes(face.id, 25, '夏季活动', null, actor);
+  assert.equal(twentyFive[0].name, '夏季活动 #01');
+  assert.equal(twentyFive[24].name, '夏季活动 #25', '25 张 → 2 位编号');
+
+  const hundred = db.createCodes(face.id, 100, '年卡', null, actor);
+  assert.equal(hundred[0].name, '年卡 #001');
+  assert.equal(hundred[99].name, '年卡 #100', '100 张 → 3 位编号');
+
+  // 未给名称：沿用「券面名、券面名 #1…」自动命名，不追加补零编号
+  const base = db.getCoupon(face.id).name;
+  assert.deepEqual(db.createCodes(face.id, 2, '   ', null, actor).map((c) => c.name), [base, `${base} #1`]);
+
+  // 数量越界、非法输入与回收站券面：一律不落库
+  assert.throws(() => db.createCodes(face.id, 0, 'x', null, actor), /1 到 100/);
+  assert.throws(() => db.createCodes(face.id, 101, 'x', null, actor), /1 到 100/);
+  assert.throws(() => db.createCodes(face.id, 'abc', 'x', null, actor), /1 到 100/);
+  const dead = newFace();
+  db.setCouponStatus(dead.id, 'recycled', actor, null);
+  assert.throws(() => db.createCodes(dead.id, 3, 'x', null, actor), /回收站/);
+  assert.equal(db.codesOf(dead.id).length, 0, '回收站券面不产生券码');
+
+  const log = db.raw.prepare("SELECT * FROM audit_log WHERE action='code.batch' ORDER BY id DESC LIMIT 1").get();
+  assert.equal(Number(log.target_id), face.id);
+  assert.match(log.detail, /"count":2/, '批量创建只记一条审计，含本次数量');
+});
+
 test('状态机：券面状态联动券码，券码可单独停用', () => {
   const dayAfterTomorrow = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
   const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);

@@ -5,10 +5,18 @@
 # 改掉 server_name 后使用，详细部署步骤见 docs/DEPLOYMENT.md。
 # 把服务暴露到公网的方式（端口、TLS、隧道、CDN）由你决定，本文件只约定「放行什么」。
 
-# 粗限流：按反代看到的客户端 IP 计数（配合应用侧 TRUST_PROXY=127.0.0.1）。经 CDN 或隧道时
-# 该地址是那层进程的回环地址、全站共用一个桶，计数键可改用该层写入的客户端头（如 $http_cf_connecting_ip）。
+# 计数键示例：请求带 Cloudflare 的 CF-Connecting-IP 就按它计数，否则回退 $remote_addr。
+# 仅为提醒——部署方式（直连/CDN/隧道）各不相同，未走 Cloudflare 时回退分支自动生效，
+# 结果与直接写 $binary_remote_addr 一致；换了别的 CDN 时把头名改成该层写入的客户端头即可。
+map $http_cf_connecting_ip $qnqupon_limit_key {
+    default $http_cf_connecting_ip;
+    ""      $remote_addr;
+}
+
+# 粗限流：按上面的计数键计数（配合应用侧 TRUST_PROXY=127.0.0.1）。经 CDN 或隧道时
+# $remote_addr 是那层进程的回环地址、全站共用一个桶，靠上面的 map 改用该层写入的客户端头。
 # 更精细的限流（核销、查券、登录等按 IP/账号分别计数）在应用层，依赖下面的 XFF 写法生效。
-limit_req_zone $binary_remote_addr zone=qnqupon_public:10m rate=1r/s;
+limit_req_zone $qnqupon_limit_key zone=qnqupon_public:10m rate=1r/s;
 
 server {
     listen 80;
@@ -18,6 +26,10 @@ server {
     proxy_hide_header Server;     # 对外隐藏上游的 Server 头
 
     limit_req zone=qnqupon_public burst=20 nodelay;
+
+    # 请求体上限：公开接口请求体都很小（查券/核销均 < 2KB），保持默认 1m 即可。
+    # 在别处配小了会先于应用返回 nginx 自带的 413 英文页；排查：nginx -T | grep client_max_body_size
+    client_max_body_size 1m;
 
     # 只放行公开必需的路径：首页 /、券码核销页 /r/、查券页 /verify、查券接口 /api/verify/、静态资源 /assets/
     location ~ ^/(r/|verify$|api/verify/|assets/|$) {

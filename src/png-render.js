@@ -64,7 +64,7 @@ function pump() {
     failActive('券面 PNG 渲染超时，请重试。');
     killChild(); // 子进程状态不明，直接结束，下次请求重新拉起
   }, JOB_TIMEOUT_MS);
-  proc.stdin.write(`${JSON.stringify({ id: job.id, coupon: job.coupon, url: job.url })}\n`);
+  proc.stdin.write(`${JSON.stringify({ id: job.id, coupon: job.coupon, url: job.url, options: job.options })}\n`);
 }
 
 function scheduleIdleExit() {
@@ -75,12 +75,12 @@ function scheduleIdleExit() {
   idleTimer.unref?.(); // 不阻止主进程退出
 }
 
-/** 渲染一张 1080×1528 券面 PNG，返回 Buffer。不缓存，按需生成。 */
-export function renderCouponPng(coupon, url) {
+/** 渲染一张 1080×1920 券面 PNG，返回 Buffer。不缓存，按需生成。options：{ font, dark }（服务设置）。 */
+export function renderCouponPng(coupon, url, options = {}) {
   if (queue.length >= MAX_QUEUE) {
     return Promise.reject(Object.assign(new Error('同时下载券面的人太多了，请稍后再试。'), { statusCode: 429 }));
   }
-  const job = { id: ++seq, coupon, url, timer: null };
+  const job = { id: ++seq, coupon, url, options, timer: null };
   const promise = new Promise((resolve, reject) => { job.resolve = resolve; job.reject = reject; });
   queue.push(job);
   scheduleIdleExit();

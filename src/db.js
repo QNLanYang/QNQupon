@@ -199,14 +199,16 @@ export function createDb(config) {
     return `${base} #${Date.now()}`;
   }
 
-  /** 一次创建一张券码。ID 由随机数生成（cd- + 12 位），撞库时自动换一个。名称留空则自动按「券面名 #序号」取号。
-   *  名称仅作展示、允许重复；showName 为单张的显示覆写（null=跟随全局）。返回 {id, token, name}。 */
-  function createCode(couponId, name, note, actorId, sourceIp, showName = null) {
+  /** 创建券码的前置校验：券面必须存在且不在回收站。 */
+  function requireEditableCoupon(couponId) {
     const face = statement.couponById.get(couponId);
     if (!face) throw new Error('优惠券不存在。');
     if (face.status === 'recycled') throw new Error('回收站中的优惠券不能创建券码。');
-    const title = String(name || '').trim() || nextDefaultCodeName(couponId, face.name);
-    const display = showName === 1 || showName === '1' ? 1 : showName === 0 || showName === '0' ? 0 : null;
+    return face;
+  }
+
+  /** 插入一张券码（ID 由随机数生成，撞库自动换一个）；名称与显示覆写由调用方决定。返回 {id, token}。 */
+  function insertCode(couponId, title, note, display, actorId) {
     const insert = db.prepare(`INSERT INTO voucher_codes(id,coupon_id,name,note,show_name,token_hash,token_ciphertext,created_at,updated_at,created_by)
       VALUES(?,?,?,?,?,?,?,?,?,?)`);
     let lastError = null;
@@ -216,14 +218,51 @@ export function createDb(config) {
         const stamp = now();
         const id = randomId();
         insert.run(id, couponId, title, note || null, display, sha256(token), encrypt(token, config.encryptionKey), stamp, stamp, actorId);
-        audit(actorId, 'code.create', 'coupon', couponId, sourceIp, { code: id, name: title, note: note || null });
-        return { id, token, name: title };
+        return { id, token };
       } catch (error) {
         lastError = error;
         if (!/UNIQUE constraint failed: voucher_codes\.id/i.test(String(error?.message))) throw error; // 只对 ID 撞车重试
       }
     }
     throw lastError || new Error('创建券码失败，请重试。');
+  }
+
+  /** 一次创建一张券码。名称留空则自动按「券面名 #序号」取号；名称仅作展示、允许重复。
+   *  showName 为单张的显示覆写（null=跟随全局设置）。返回 {id, token, name}。 */
+  function createCode(couponId, name, note, actorId, sourceIp, showName = null) {
+    const face = requireEditableCoupon(couponId);
+    const title = String(name || '').trim() || nextDefaultCodeName(couponId, face.name);
+    const display = showName === 1 || showName === '1' ? 1 : showName === 0 || showName === '0' ? 0 : null;
+    const { id, token } = insertCode(couponId, title, note, display, actorId);
+    audit(actorId, 'code.create', 'coupon', couponId, sourceIp, { code: id, name: title, note: note || null });
+    return { id, token, name: title };
+  }
+
+  /** 批量创建券码：名称统一为「基名 #序号」，序号左补零到与本次数量同宽
+   *  （9 张 → #1…#9，25 张 → #01…#25，100 张 → #001…#100）；未给基名时沿用默认命名规则
+   *  （券面名、券面名 #1…）。券码名显示统一显式设为隐藏（0，管理员可单独改回）。
+   *  整批在一个事务内完成，中途失败全部回滚。返回 [{id, token, name}]。 */
+  function createCodes(couponId, count, name, note, actorId, sourceIp) {
+    const face = requireEditableCoupon(couponId);
+    const total = Number(String(count ?? '').trim());
+    if (!Number.isInteger(total) || total < 1 || total > 100) throw new Error('批量生成数量需为 1 到 100 的整数。');
+    const base = String(name || '').trim();
+    const width = String(total).length; // 编号位数与数量同宽：#1…#9 / #01…#99 / #001…#100
+    const created = [];
+    db.exec('BEGIN');
+    try {
+      for (let i = 1; i <= total; i += 1) {
+        const title = base ? `${base} #${String(i).padStart(width, '0')}` : nextDefaultCodeName(couponId, face.name);
+        const { id, token } = insertCode(couponId, title, note, 0, actorId);
+        created.push({ id, token, name: title });
+      }
+      audit(actorId, 'code.batch', 'coupon', couponId, sourceIp, { count: total, base: base || null, first: created[0].name, last: created[created.length - 1].name });
+      db.exec('COMMIT');
+    } catch (error) {
+      try { db.exec('ROLLBACK'); } catch { /* 事务可能已结束，忽略 */ }
+      throw error;
+    }
+    return created;
   }
 
   function setCodeName(id, name, actorId, sourceIp, showName) {
@@ -405,7 +444,7 @@ export function createDb(config) {
 
   return {
     raw: db, hasSuperAdmin: () => Boolean(statement.hasSuper.get()), audit, couponState, codeState, getCouponByToken, createCoupon,
-    updateCoupon, setCouponStatus, createCode, setCodeStatus, setCodeName, setCodeNote, redeem, recycleEligible, purgeRecycled, stats, retention,
+    updateCoupon, setCouponStatus, createCode, createCodes, setCodeStatus, setCodeName, setCodeNote, redeem, recycleEligible, purgeRecycled, stats, retention,
     // 券码名全局展示开关（PNG 与客人核销页是否带券码名）；单张券码的 show_name 可覆写。
     voucherDisplay: () => ({ showCodeName: getSetting('showCodeName', 'true') !== 'false' }),
     getCoupon: (id) => statement.couponWithCreator.get(id),

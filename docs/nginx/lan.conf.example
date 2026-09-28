@@ -25,6 +25,11 @@ server {
 
     limit_req zone=qnqupon_admin burst=60 nodelay;
 
+    # 请求体上限：默认 1m 即可（应用表单最大约 20KB、应用自身上限 32KB）。
+    # 在别处（http 块或其它 include）配小了，提交创建券面会先撞 nginx 自带的 413 英文页、请求到不了应用；
+    # 排查最终生效值：nginx -T | grep client_max_body_size
+    client_max_body_size 1m;
+
     location / {
         proxy_pass http://127.0.0.1:3100;
         proxy_http_version 1.1;

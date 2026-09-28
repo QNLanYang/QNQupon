@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 QNLanYang (全能岚漾)
 
-import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 
 export const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 export const randomToken = (bytes = 32) => randomBytes(bytes).toString('base64url');
@@ -82,38 +82,51 @@ const normalizeHostname = (value) => { try { return new URL(`http://${String(val
 
 // Turnstile 服务端校验：把表单回传的 token 回源 Cloudflare siteverify（token 5 分钟有效、一次性）。
 // reason：missing = 页面没带 token；invalid = 回源明确未通过；hostname = 成功但来源域名不在预期集；
-// network = 请求没完成（超时/非 2xx/非 JSON）。expectedHostnames 非空时校验返回的 hostname。
+// network = 请求没完成（超时/非 2xx/非 JSON，带 detail 供调用方写日志）。expectedHostnames 非空时校验返回的 hostname。
+// 回源是出网请求，冷连接偶发变慢会被超时掐断：network 结果会隔 retryDelayMs 自动再试一次（其余 reason 是确定性结论，不重试）。
+// 两次请求共享同一个 idempotency_key（Cloudflare 为可重试校验提供的幂等键）：若第一次实际已被 CF 处理、
+// 只是响应在网络中丢失，重试会回放同一结果，不会因 token 已消费而误判；每次调用各自生成新键，
+// 跨请求的 token 一次性语义不放宽。
 // fetchImpl 可注入，供单测在无真实网络时覆盖各分支。
-export async function verifyTurnstile({ secret, response, remoteip = '', expectedHostnames = [], fetchImpl = globalThis.fetch, timeoutMs = 5000 }) {
+export async function verifyTurnstile({ secret, response, remoteip = '', expectedHostnames = [], fetchImpl = globalThis.fetch, timeoutMs = 5000, retryDelayMs = 250 }) {
   const token = String(response || '');
   if (!token) return { success: false, reason: 'missing', codes: [] };
-  let res;
-  try {
-    res = await fetchImpl('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ secret, response: token, ...(remoteip ? { remoteip } : {}) }),
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-  } catch {
-    return { success: false, reason: 'network', codes: [] };
-  }
-  if (!res || !res.ok) return { success: false, reason: 'network', codes: [] };
-  try {
-    const data = await res.json();
-    if (data && data.success === true) {
-      // 成功时比对 hostname（token 在哪个域名上跑出来的）：不在预期集 = 在别处跑的 token，拒绝。
-      // CF 未返回该字段时无可比对，放行——该字段由 CF 经 HTTPS 返回，攻击者无法剥离或伪造。
-      // 测试密钥的 hostname 固定为占位值 example.com（CF 以 metadata.result_with_testing_key 标记），跳过核对。
-      const testing = Boolean(data.metadata && data.metadata.result_with_testing_key === true);
-      const seen = testing ? '' : normalizeHostname(data.hostname);
-      if (seen && expectedHostnames.length && !expectedHostnames.some((name) => normalizeHostname(name) === seen)) {
-        return { success: false, reason: 'hostname', codes: ['hostname-mismatch'] };
-      }
-      return { success: true, reason: null, codes: [] };
+  const idempotencyKey = randomUUID();
+  const attempt = async () => {
+    let res;
+    try {
+      res = await fetchImpl('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ secret, response: token, ...(remoteip ? { remoteip } : {}), idempotency_key: idempotencyKey }),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+    } catch (error) {
+      return { success: false, reason: 'network', codes: [], detail: String(error?.message || 'fetch failed').slice(0, 120) };
     }
-    return { success: false, reason: 'invalid', codes: Array.isArray(data && data['error-codes']) ? data['error-codes'].slice(0, 8).map(String) : [] };
-  } catch {
-    return { success: false, reason: 'network', codes: [] };
+    if (!res || !res.ok) return { success: false, reason: 'network', codes: [], detail: `http:${res?.status ?? 'unknown'}` };
+    try {
+      const data = await res.json();
+      if (data && data.success === true) {
+        // 成功时比对 hostname（token 在哪个域名上跑出来的）：不在预期集 = 在别处跑的 token，拒绝。
+        // CF 未返回该字段时无可比对，放行——该字段由 CF 经 HTTPS 返回，攻击者无法剥离或伪造。
+        // 测试密钥的 hostname 固定为占位值 example.com（CF 以 metadata.result_with_testing_key 标记），跳过核对。
+        const testing = Boolean(data.metadata && data.metadata.result_with_testing_key === true);
+        const seen = testing ? '' : normalizeHostname(data.hostname);
+        if (seen && expectedHostnames.length && !expectedHostnames.some((name) => normalizeHostname(name) === seen)) {
+          return { success: false, reason: 'hostname', codes: ['hostname-mismatch'] };
+        }
+        return { success: true, reason: null, codes: [] };
+      }
+      return { success: false, reason: 'invalid', codes: Array.isArray(data && data['error-codes']) ? data['error-codes'].slice(0, 8).map(String) : [] };
+    } catch {
+      return { success: false, reason: 'network', codes: [], detail: 'bad-json' };
+    }
+  };
+  let verdict = await attempt();
+  if (verdict.reason === 'network') {
+    if (retryDelayMs > 0) await new Promise((resolve) => { setTimeout(resolve, retryDelayMs); });
+    verdict = await attempt();
   }
+  return verdict;
 }

@@ -163,17 +163,25 @@ test('券面详情：创建券码表单与空状态引导', () => {
   assert.match(html, /action="\/admin\/coupons\/7\/codes"/, '要有创建券码的表单');
   assert.match(html, /name="name" maxlength="80"/, '保留券码名称输入框');
   assert.ok(!/name="name" required/.test(html), '券码名称可留空，自动命名（不再 required）');
-  assert.match(html, /留空 = 自动命名/, '要写清楚留空的默认行为');
-  assert.match(html, /名称仅用于展示，可以重复/, '名称可重复');
+  assert.match(html, /留空自动命名/, '要写清楚留空的默认行为');
+  assert.match(html, /名称仅作展示，可重复/, '名称可重复');
   assert.ok(!html.includes('不与已有券码重名'), '不再宣称券码名唯一');
   assert.match(html, /name="show_name"[\s\S]{0,160}跟随全局设置[\s\S]{0,120}始终显示[\s\S]{0,120}始终隐藏/, '创建时可选券码名显示覆写');
   assert.match(html, /name="note"/, '创建时可填发给谁的备注');
-  assert.ok(!html.includes('name="count"'), '不再一次批量创建多张，一次点击创建一张');
-  assert.match(html, /一次创建一张/, '要写清楚创建规则');
+  assert.match(html, /name="count" id="code-count" type="number" min="1" max="100"/, '创建表单带生成数量（数量 1 = 单张，>1 = 批量）');
+  assert.match(html, /value="1">[\s\S]{0,80}<button class="primary" id="code-submit"/, '数量默认 1，且与单张创建共用同一个按钮');
+  assert.match(html, /位数与数量同宽，如 25 张 → <code>#01<\/code>…#25/, '批量编号规则收进 ❓ 说明');
+  assert.match(html, /券码名默认不显示/, '批量生成的券码名默认隐藏');
+  assert.match(html, /class="tip"><button type="button" aria-label="本面板说明">\?<\/button>/, '面板说明收进右上角 ❓（纯 CSS 气泡）');
+  assert.ok(!html.includes('class="muted">每张券码有独立'), '面板里不再铺平整段说明');
+  assert.ok(!html.includes('/codes/batch'), '批量与单张是同一个表单，不另设独立入口');
   assert.match(html, /class="table-scroll"><table>/, '券码列表要限高、超出滚动');
   assert.match(html, /还没有券码/, '空状态要解释“没有券码不能发出去”');
-  assert.match(html, /每张券码次数/, '券面信息要写清次数口径');
+  assert.match(html, /次数<\/dt><dd>\d+ 次\/张/, '券面信息要写清次数口径');
   assert.ok(!html.includes('/admin/coupons/7/qrcode'), '券码的二维码在券码详情里，不在券面');
+
+  const appJs = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(appJs, /#code-count[\s\S]{0,200}#code-show-name[\s\S]{0,600}批量生成/, '数量 > 1 时前端把「券码名显示」锁为隐藏、按钮切换为批量文案');
 
   const recycled = couponDetail({ user, coupon: faceOf({ status: 'recycled' }), codes: [], redemptions: [], csrf: 'csrf-token', flash: null });
   assert.ok(!recycled.includes('action="/admin/coupons/7/codes"'), '回收站中的券面不能创建券码');
@@ -195,6 +203,7 @@ test('券码详情：二维码、复制链接、PNG 与单独状态操作', () =
   assert.match(html, /data-copy-link="\/admin\/codes\/cd-AbCdEfGh1234\/link"/, '复制链接走接口，不把 Token 写进 HTML');
   assert.match(html, /href="\/admin\/codes\/cd-AbCdEfGh1234\/open"/);
   assert.match(html, /href="\/admin\/codes\/cd-AbCdEfGh1234\/image"[^>]*>下载券面 PNG/);
+  assert.match(html, /href="\/admin\/codes\/cd-AbCdEfGh1234\/image\?inline=1"[^>]*>预览券面 PNG/, '预览按钮新标签页内联打开');
   assert.match(html, />停用这张券码</, '可单独停用');
   assert.match(html, /移入回收站/);
   assert.match(html, /action="\/admin\/codes\/cd-AbCdEfGh1234\/name"/, '可改券码名称');
@@ -327,10 +336,10 @@ test('回收站页：券面与券码两栏、恢复入口与导航', () => {
   assert.match(html, /2026-09-24 20:00/, '移入时间按北京时间显示（UTC+8）');
   assert.match(html, /李四/, '券码要显示备注便于认领');
   assert.ok(!html.includes('/purge'), '永久删除不放在回收站列表，保留在详情页勾选确认');
-  assert.match(html, /移入满 30 天后自动永久删除/, '默认保留天数写进说明');
+  assert.match(html, /移入满 30 天自动永久删除/, '默认保留天数写进说明');
 
   const tuned = recyclePage({ user, csrf: 'csrf-token', flash: null, faces: [], codes: [], purgeDays: 7 });
-  assert.match(tuned, /移入满 7 天后自动永久删除/, '保留天数可由后台配置传入');
+  assert.match(tuned, /移入满 7 天自动永久删除/, '保留天数可由后台配置传入');
 
   const empty = recyclePage({ user, csrf: 'csrf-token', flash: null, faces: [], codes: [] });
   assert.match(empty, /没有回收的优惠券/);
@@ -345,7 +354,7 @@ test('回收站页：券面与券码两栏、恢复入口与导航', () => {
 
 test('优惠券列表与概览带回收站入口', () => {
   const list = couponsPage({ user, csrf: 'csrf-token', flash: null, coupons: [] });
-  assert.match(list, /href="\/admin\/recycle">前往回收站/);
+  assert.match(list, /href="\/admin\/recycle">回收站 →</, '保留回收站入口');
   const dash = dashboard({ user, csrf: 'csrf-token', flash: null, coupons: [], stats: { valid: 0, used: 0, expiring: 0, recycled: 2 } });
   assert.match(dash, /class="stat-link" href="\/admin\/recycle"/, '回收站统计应可点击');
   assert.match(dash, /最近核销/, '概览要有最近核销面板');
@@ -362,19 +371,27 @@ test('优惠券列表与概览带回收站入口', () => {
   assert.match(dash2, /已发送/);
 });
 
-test('创建/编辑页有返回按钮与日期输入占位', () => {
+test('创建/编辑页有返回按钮与日期留空提示', () => {
   const create = couponForm({ user, csrf: 'csrf-token', coupon: null, presets: [], flash: null });
   assert.match(create, /class="back" href="\/admin\/coupons">← 返回优惠券列表/);
-  assert.match(create, /class="date-input" name="startsOn"/);
-  assert.match(create, /data-placeholder="留空 = 即刻生效"/);
-  assert.match(create, /data-placeholder="留空 = 长期有效"/);
+  assert.match(create, /name="startsOn" type="date"/, '日期交还原生 date 控件');
+  assert.match(create, /开始日期<small>（留空 = 即刻生效）<\/small>/);
+  assert.match(create, /截止日期<small>（留空 = 长期有效）<\/small>/);
+  assert.ok(!create.includes('data-placeholder'), '日期提示改为可见文案，date 控件不支持 placeholder');
   assert.match(create, /每张券码可用次数/, '次数口径要写清是每张券码');
-  assert.match(create, /先建“券面”/, '创建页要解释券面与券码的关系');
+  assert.ok(!create.includes('先建'), '创建页不再铺开“先建券面再建券码”的流程说明');
   const edit = couponForm({ user, csrf: 'csrf-token', presets: [], flash: null, coupon: {
     id: 9, name: '券', offer_text: 'x', max_uses: 1, used_count: 0, starts_on: '2026-09-01', expires_on: ''
   } });
   assert.match(edit, /class="back" href="\/admin\/coupons\/9">← 返回详情/);
   assert.match(edit, /value="2026-09-01"/);
+});
+
+test('日期输入：脚本零接管，全平台原生 date', () => {
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(app, /input\.type\s*=/, '脚本不碰输入框 type');
+  assert.doesNotMatch(app, /navigator\.userAgent/, '不做 UA 分支');
+  assert.doesNotMatch(app, /normalizeDate|querySelectorAll\('input\.date-input'\)/, '日期处理与降级代码已整体移除');
 });
 
 test('个人账号页有返回概览', () => {
@@ -396,6 +413,15 @@ test('状态配色：可核销绿 / 用尽与过期黄 / 未启用蓝 / 禁用�
   assert.match(css, /\.table-scroll td:nth-child\(3\)\{white-space:nowrap\}/, '已用列不折行');
   assert.match(css, /\.badge\{white-space:nowrap\}/, '状态徽标不折行');
   assert.match(css, /\.detail-grid\{display:grid;grid-template-columns:minmax\(0,2fr\) minmax\(0,3fr\)/, '券面信息用窄列、券码列表用宽列');
+  assert.match(css, /\.admin-body \.container>\*\+\*:not\(\.site-footer\)\{margin-top:22px\}/, '后台页顶层模块（.panel / .detail-grid）之间保留 22px 纵向间距，页脚不受影响');
+});
+
+test('面板说明入口：纯 CSS 气泡，零脚本', () => {
+  const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(css, /\.tip\{position:absolute;right:16px;top:14px;z-index:5\}/, '说明入口固定在面板右上角');
+  assert.match(css, /\.tip:hover \.tip-body,\.tip:focus-within \.tip-body\{opacity:1;visibility:visible/, '悬浮或获得焦点（触屏点按）即显示、失焦收起');
+  assert.ok(!app.includes('tip'), '气泡不靠脚本：app.js 里没有任何相关代码');
 });
 
 test('三态主题：浅色变量中枢 + 深色双入口', () => {
@@ -455,13 +481,13 @@ test('列表刷新按钮与概览时区说明', () => {
   assert.match(recycle, /<div class="actions"><a class="secondary button" href="\/admin\/recycle">刷新<\/a>/);
 
   const dash = dashboard({ user, csrf: 'csrf-token', flash: null, coupons: [], stats: { valid: 1, used: 2, expiring: 3, recycled: 0 } });
-  assert.match(dash, /北京时间（Asia\/Shanghai）/, '概览要说明时间口径');
+  assert.match(dash, /时间均为北京时间/, '概览要说明时间口径');
   assert.ok(!dash.includes('北京时间 ·'), '不再用容易被当成时间的旧文案');
   assert.match(dash, /30 天内到期/, '临期天数缺省回退 30');
   assert.match(dashboard({ user, csrf: 'csrf-token', flash: null, coupons: [], stats: { valid: 1, used: 2, expiring: 3, recycled: 0, expiringDays: 14 } }), /14 天内到期/, '临期天数由后台配置传入');
 
-  const tuned = couponsPage({ user, csrf: 'csrf-token', flash: null, coupons: [], purgeDays: 7 });
-  assert.match(tuned, /回收站保留 7 天/, '列表页保留天数可由后台配置传入');
+  const tuned = recyclePage({ user, csrf: 'csrf-token', flash: null, faces: [], codes: [], purgeDays: 7 });
+  assert.match(tuned, /移入满 7 天自动永久删除/, '回收站保留天数可由后台配置传入');
 });
 
 test('服务设置页：数据保留策略表单与默认值回退', () => {
@@ -486,10 +512,22 @@ test('服务设置页：券面展示开关（默认开启、可关闭）', () =>
   const html = settingsPage({ user, csrf: 'csrf-token', flash: null, settings: {} });
   assert.match(html, /action="\/admin\/settings\/display"/, '展示开关有独立表单');
   assert.match(html, /name="showCodeName"[^>]*checked/, '未配置时默认勾选（显示券码名）');
-  assert.match(html, /单张券码可在其详情页单独覆写/, '要说明覆写入口');
+  assert.match(html, /单张券码可在其详情页覆写/, '要说明覆写入口');
 
   const off = settingsPage({ user, csrf: 'csrf-token', flash: null, settings: { showCodeName: 'false' } });
   assert.ok(!/name="showCodeName"[^>]*checked/.test(off), '关闭后不勾选');
+});
+
+test('服务设置页：PNG 字体三选一（默认思源）与深色版面开关', () => {
+  const html = settingsPage({ user, csrf: 'csrf-token', flash: null, settings: {} });
+  assert.match(html, /name="pngFont"[\s\S]{0,200}?value="source"[\s\S]{0,80}?selected/, '未配置时默认思源黑体');
+  assert.ok(!/name="pngDark"[^>]*checked/.test(html), '深色版面默认关闭');
+  assert.match(html, /渲染机未安装则回退系统无衬线体/, '字体依赖要写明');
+  assert.match(html, /品牌行 QNQupon · 券能行 为固定字标/, '品牌行不随后台字体');
+
+  const tuned = settingsPage({ user, csrf: 'csrf-token', flash: null, settings: { pngFont: 'harmonyos', pngDark: 'true' } });
+  assert.match(tuned, /value="harmonyos" selected/, '记住所选字体');
+  assert.match(tuned, /name="pngDark"[^>]*checked/, '记住深色开关');
 });
 
 test('核销记录总页：筛选表单、分页链接与表格列', () => {

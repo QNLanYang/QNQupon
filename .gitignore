@@ -4,4 +4,5 @@ node/
 .node-gyp/
 .env
 data/
+temp/
 npm-debug.log*

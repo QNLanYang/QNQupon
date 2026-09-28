@@ -51,22 +51,8 @@ cancelButton.addEventListener('click', closeModal);
 mask.addEventListener('click', (event) => { if (event.target === mask) closeModal(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !mask.hidden) closeModal(); });
 
-// 日期输入：留空时降级为文本框显示“留空表示不限”，聚焦时再唤起原生日历。
-document.querySelectorAll('input.date-input').forEach((input) => {
-  const placeholder = input.dataset.placeholder || '留空表示不限';
-  const sync = () => {
-    if (input.value) {
-      input.type = 'date';
-      input.placeholder = '';
-    } else {
-      input.type = 'text';
-      input.placeholder = placeholder;
-    }
-  };
-  input.addEventListener('focus', () => { input.type = 'date'; });
-  input.addEventListener('blur', sync);
-  sync();
-});
+// 日期输入：一律用原生 type="date"，脚本零接管——实测（鸿蒙 ArkWeb）由脚本在聚焦时切换 type
+// 会引发首点不弹日历、二次点击框闪烁且值提交不上（本地三组对照页实测；对照组脚本在 temp/ 不入库）。
 
 const preset = document.querySelector('#preset-select');
 if (preset) preset.addEventListener('change', () => {
@@ -74,6 +60,24 @@ if (preset) preset.addEventListener('change', () => {
   if (option?.dataset.instructions) document.querySelector('#instructions').value = option.dataset.instructions;
   if (option?.dataset.store) document.querySelector('#store-text').value = option.dataset.store;
 });
+
+// 创建券码：数量 > 1 即批量——名称自动加编号、券码名固定隐藏（批量默认不给客人看名字），
+// 因此批量时把「券码名显示」置为始终隐藏并禁用，回到单张再恢复；按钮文案同步。
+const codeCount = document.querySelector('#code-count');
+const codeShowName = document.querySelector('#code-show-name');
+const codeSubmit = document.querySelector('#code-submit');
+if (codeCount && codeShowName && codeSubmit) {
+  let singleChoice = codeShowName.value;
+  const sync = () => {
+    const bulk = Number(codeCount.value) > 1;
+    if (bulk && !codeShowName.disabled) singleChoice = codeShowName.value;
+    codeShowName.disabled = bulk;
+    codeShowName.value = bulk ? '0' : singleChoice;
+    codeSubmit.textContent = bulk ? `批量生成 ${codeCount.value} 张` : '创建券码';
+  };
+  codeCount.addEventListener('input', sync);
+  sync();
+}
 
 // 复制裁销链接：Token 只在点击时从后台接口取，不写进页面 HTML。
 async function copyText(text) {

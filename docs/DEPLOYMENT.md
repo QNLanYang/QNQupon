@@ -21,6 +21,21 @@
 - Node.js 22+（Windows 可用外置 `node/` 目录）
 - 反向代理（可选但强烈建议；示例配置见 [`docs/nginx/`](nginx/)）
 
+## 券面 PNG 字体
+
+券面 PNG 正文字体在「服务设置 → 券面展示」选择（默认思源黑体），**仅按名称引用、仓库不携带字体文件**，需渲染机装有对应字体，缺字体时回退系统无衬线体（文字照样出图，只是字形不同）。品牌行 `QNQupon · 券能行` 是入库的字标轮廓，任何机器渲染一致，不受本节影响。
+
+- **Linux（Debian/Ubuntu 示例，默认字体思源黑体 = Noto Sans CJK）**：
+
+```bash
+sudo apt install fonts-noto-cjk
+fc-cache -fv            # 刷新字体缓存后重启服务
+```
+
+其他发行版安装 Noto Sans CJK / Source Han Sans SC 的对应包即可；选了 MiSans 或 HarmonyOS Sans SC 则自行下载安装到字体目录。
+
+- **Windows**：把字体文件（如 `SourceHanSansSC-Bold.otf`、`MiSans.ttf`）复制到 `C:\Windows\Fonts` 安装（双击安装亦可），或放到服务账号可读的目录后在「字体设置」中安装；安装完成后重启 QNQupon 服务使渲染子进程拿到新字体。
+
 ## 配置 `.env`
 
 复制 `.env.example` 为 `.env`，逐项说明：
@@ -79,7 +94,9 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
   -keyout admin.example.com.key -out admin.example.com.crt -subj "/CN=admin.example.com"
 ```
 
-Nginx 侧建议同时：`server_tokens off;`、`limit_req` 粗限流（示例已含）、`proxy_hide_header Server;`。
+Nginx 侧建议同时：`server_tokens off;`、`limit_req` 粗限流（示例已含）、`proxy_hide_header Server;`、`client_max_body_size 1m;`。
+
+请求体上限 `client_max_body_size` 保持 nginx 默认 1m 即可：应用表单最大约 20KB、应用自身上限 32KB。若在别处（`http` 块或其它 include）配了更小的值，提交创建券面会**先撞 nginx 自带的英文 413 页**、请求根本到不了应用——用 `nginx -T` 查最终生效的 `client_max_body_size`，改回 `1m` 后 reload。
 
 ## 对外暴露（任选）
 
@@ -136,6 +153,7 @@ WantedBy=multi-user.target
 | 全站/后台 404 | 反向代理没透传 `Host`，或 `ADMIN_HOSTS` 未包含访问后台所用的 Host（`localhost` / `127.0.0.1` 除外） |
 | 对外域名能打开管理后台 | 对外入口没有屏蔽 `/admin`——对照 `public.conf.example` 补 `location` |
 | 接口全 429 或限流"对不上人" | `TRUST_PROXY` 与反代 XFF 写法不匹配（必须覆盖式 + 只信任 127.0.0.1） |
+| 提交表单返回 413（nginx 英文错误页） | 反代的 `client_max_body_size` 小于表单体积（表单最大约 20KB）——用 `nginx -T` 查最终生效值，改回 `1m` 后 reload |
 | 本机打不开管理后台 | 理论上 `localhost` / `127.0.0.1` 恒放行——若经代理访问，请确认代理透传了 `Host` 且目标 Host 在白名单内 |
 | Cookie 不生效、反复跳登录 | HTTPS 站点 `COOKIE_SECURE` 不是 `true`，或站点实际是 HTTP |
 | 客人扫码打不开 | `PUBLIC_BASE_URL` 与实际公开域名不一致 |

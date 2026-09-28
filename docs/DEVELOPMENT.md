@@ -45,10 +45,10 @@ node\node.exe --test     # 或 npm test（node 在 PATH 时）
 
 | 文件 | 覆盖范围 |
 | --- | --- |
-| `test/security.test.js` | 随机 Token、密码哈希、AES-256-GCM 加解密与篡改检测、定长确认码字符集、确认码输入规范化（大小写/空格/连字符与非法字符）、Turnstile 回源校验（成功、缺 token、无效、网络错误与来源域名核对） |
-| `test/db.test.js` | 券面/券码两级状态机与联动、券码 ID 格式与唯一性、单张创建/改名/备注、券码名重复与显示覆写（单张 `show_name` 与全局开关）、原子核销（并发 12 次只成功 5 次）、回收生命周期与保留参数（后台可调、脏值回退默认）、全局核销记录查询（最近列表/分页/券面与日期筛选）、审计分页（类别/操作人/日期筛选）、设置加密读写、东八区日期边界、凭证查询（默认 72 小时窗口与最小字段） |
-| `test/coupon-image.test.js` | 券面 PNG 魔数与 1080×1528 尺寸 |
-| `test/views.test.js` | 各状态不出现核销按钮、三色结果面板、查询结果页层级（确认码小标题、结果为视觉重心、查询下一个按钮）、直白失败原因、HTML 转义、角色导航隐藏、券面/券码详情（含券码名显示表单）、回收站两栏、状态配色、北京时间、权限不足页、限流提示页、查询页三态与不泄漏后台信息、保留策略表单与参数插值、券面展示开关、核销记录总页与概览最近核销面板、审计页筛选与分页、首页介绍与全站页脚、三态主题（变量中枢与深色双入口、页脚主题开关与 theme.js）、登录页人机验证组件（配置才渲染） |
+| `test/security.test.js` | 随机 Token、密码哈希、AES-256-GCM 加解密与篡改检测、定长确认码字符集、确认码输入规范化（大小写/空格/连字符与非法字符）、Turnstile 回源校验（成功、缺 token、无效、网络错误与来源域名核对、网络失败重试一次且两次共享幂等键） |
+| `test/db.test.js` | 券面/券码两级状态机与联动、券码 ID 格式与唯一性、单张创建/改名/备注、批量生成券码（编号位数与数量同宽、统一隐藏券码名、数量越界不落库）、券码名重复与显示覆写（单张 `show_name` 与全局开关）、原子核销（并发 12 次只成功 5 次）、回收生命周期与保留参数（后台可调、脏值回退默认）、全局核销记录查询（最近列表/分页/券面与日期筛选）、审计分页（类别/操作人/日期筛选）、设置加密读写、东八区日期边界、凭证查询（默认 72 小时窗口与最小字段） |
+| `test/coupon-image.test.js` | 券面 PNG 魔数与 1080×1920 尺寸（含深色与字体选项）、券面名称在顶部色带内垂直居中（单行与双行中线一致） |
+| `test/views.test.js` | 各状态不出现核销按钮、三色结果面板、查询结果页层级（确认码小标题、结果为视觉重心、查询下一个按钮）、直白失败原因、HTML 转义、角色导航隐藏、券面/券码详情（含券码名显示表单）、创建券码表单（单张与批量共用、数量 1-100、批量语义说明）、回收站两栏、状态配色、北京时间、权限不足页、限流提示页、查询页三态与不泄漏后台信息、保留策略表单与参数插值、券面展示开关、核销记录总页与概览最近核销面板、审计页筛选与分页、首页介绍与全站页脚、三态主题（变量中枢与深色双入口、页脚主题开关与 theme.js）、登录页人机验证组件（配置才渲染） |
 
 ### 登录人机验证本地联调（可选）
 
@@ -63,6 +63,21 @@ node\node.exe scripts\token.mjs cd-3Kd9xWm2QaP7 # 解密打印某券码原始 To
 node\node.exe scripts\generate-secrets.js       # 生成 .env 密钥
 ```
 
+### 本地预览与对照工具（`temp/`，不入库）
+
+开发期临时脚本统一放 `temp/`（已 gitignore，不进版本库），无需 `.env`：
+
+```powershell
+node\node.exe temp\preview-png-layout.mjs       # 券面 PNG 目视预览：真实渲染器出图 + HTML 画廊（--doc 顺带刷新 README 截图）
+node\node.exe temp\preview-png-layout-tuner.mjs # 版面调参器：滑块实时调间距/字号，输出参数 JSON（生成单文件 HTML）
+node\node.exe temp\preview-font-choice.mjs      # 券面正文字体选项对比预览
+node\node.exe temp\preview-logo-asset.mjs       # 品牌字标轮廓对比预览
+node\node.exe temp\preview-body-limit.mjs       # 请求体上限量具：逐级加长表单定位 413 阈值（需服务已在 3100 运行）
+node\node.exe temp\preview-date-input.mjs       # 日期输入三组对照页（默认 3200，监听 0.0.0.0 供手机实测）
+node\node.exe temp\crop-screenshots.mjs         # 截图裁边：按卡片边界自动取景（默认处理两张 public 截图，可传文件名与 --pad）
+python temp\gen-brand-logo.py <输出.js>         # 品牌字标轮廓生成器（需本机 Century Gothic Bold / 思源黑体 + fonttools）
+```
+
 ## 目录结构
 
 ```
@@ -73,11 +88,13 @@ src/
 ├─ security.js      Token/密码哈希/对称加密/确认码/随机 ID
 ├─ views.js         服务端 HTML 模板
 ├─ mailer.js        SMTP 通知
-├─ coupon-image.js  1080×1528 PNG 版面计算
+├─ brand-logo.js    品牌字标 SVG 轮廓数据（开发机预生成入仓，零字体依赖）
+├─ coupon-image.js  1080×1920 PNG 版面计算
 ├─ png-render.js    渲染子进程管理（串行队列、60s 空闲退出）
 └─ png-child.js     渲染子进程端（NDJSON 协议）
 public/             app.css、app.js、theme.js（唯一前端资源，无构建步骤）
 scripts/            辅助脚本
+temp/               开发期临时预览/对照脚本（gitignore，不入库）
 test/               node --test 测试
 docs/               架构 / 部署 / 开发文档与 Nginx 示例配置
 ```
@@ -89,5 +106,6 @@ docs/               架构 / 部署 / 开发文档与 Nginx 示例配置
 - SQL 一律 `db.prepare(...)` 预编译参数化，禁止拼接；HTML 输出统一 `esc()`、表单值 `attr()`
 - 时间一律 UTC 存储、`beijingTime` 展示；有效期按 `Asia/Shanghai` 自然日比较
 - 界面文案中文；面向客人的页面每条提示要**简洁而全面**——一句话说清事实与下一步动作，正式而不学术、不堆解释、不要 AI 味（避免连环破折号、自问自答、空泛安抚）；超管后台可更简短
+- **后台面板的说明统一走右上角 ❓**（`.tip` 气泡，纯 CSS 零 JS）：面板常驻文案不超过一行，只保留「不看会做错」的口径与联动；字段示例写进 placeholder，不塞进标签括号
 - 危险操作必须走页面内模态确认（`data-confirm`），不用 `window.confirm`
 - GET 请求不得改变状态；核销等写操作用条件 UPDATE 的 `changes` 判成败

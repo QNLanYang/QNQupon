@@ -34,7 +34,8 @@ src/
 ├─ security.js      Token/密码哈希/对称加密/确认码/随机 ID
 ├─ views.js         服务端 HTML 模板
 ├─ mailer.js        SMTP 通知
-├─ coupon-image.js  1080×1528 PNG 版面计算
+├─ brand-logo.js    品牌字标 SVG 轮廓数据（开发机预生成入仓，零字体依赖）
+├─ coupon-image.js  1080×1920 PNG 版面计算
 ├─ png-render.js    渲染子进程管理（串行队列、60s 空闲退出）
 └─ png-child.js     渲染子进程端（NDJSON 协议）
 public/             app.css、app.js
@@ -66,6 +67,7 @@ docs/nginx/         生产 Nginx 示例配置
   2. 路由层先做格式校验（`/^cd-[A-Za-z0-9]{12}$/`），不符直接 404——把随机 ID 当成第一层模糊防护
   3. 冲突时重试 3 次
 - 券码可用性 = 自身状态 **∧** 券面状态：查询时 join 合成判定，停用/回收券面即让全部券码失效，不需要逐张写回
+- **创建券码**：单张与批量共用同一入口与表单（`createCode` / `createCodes`，批量 1-100 张）。批量名称统一为「基名 #序号」，序号左补零到与本次数量同宽（9 张 → `#1`…#9，100 张 → `#001`…#100）；未给基名则按「券面名、券面名 #1…」碰撞取号（中间被删/回收的号会被补上）。批量券码名显式设为不显示（`show_name = 0`，单张仍可覆写或跟随全局），整批一个事务、一条 `code.batch` 审计
 
 ## Token 设计：哈希 + 加密副本并存
 
@@ -108,8 +110,8 @@ docs/nginx/         生产 Nginx 示例配置
 
 ## 核销凭证查询（防伪）
 
-- `GET /verify`（HTML 表单，结果 URL 可分享）+ `GET /api/verify/:code`（JSON，**不带 CORS 头**）
-- 默认保留 72 小时可查（`verifyHours`，后台可调）；只回 `confirmation_code / redeemed_at / face_name / code_name / email_status`——IP、UA、备注、核销链接一概不返回
+- `GET /verify`（HTML 表单，结果 URL 可分享）+ `GET /api/verify/:code`（JSON，**不带 CORS 头**；字段 `found / confirmationCode / faceName / codeName / redeemedAt / redeemedAtBeijing`，调用示例见 [README](../README.md)）
+- 默认保留 72 小时可查（`verifyHours`，后台可调）；JSON 只回上述最小字段，HTML 结果页另显示邮件通知状态——IP、UA、备注、核销链接一概不返回
 - 结果页层级：确认码缩为顶部小标题，真伪结论与券面/券码/核销时间/邮件状态放大为视觉重心，底部「查询下一个」返回查询表单
 - 过期、查不到、从未核销统一中性灰面板（不泄露"码存在与否"以外的信息）；格式错才给明确红提示
 - 两入口各限流 30 次/分/IP；HTML/JSON 均 `Cache-Control: no-store`（防查询结果被缓存串号）

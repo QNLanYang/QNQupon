@@ -96,7 +96,7 @@ test('verifyTurnstile：回源成功且域名符合预期才放行，请求带 s
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, 'https://challenges.cloudflare.com/turnstile/v0/siteverify');
   const body = String(calls[0].options.body);
-  assert.ok(body.includes('secret=s3cret') && body.includes('response=tok-1') && body.includes('remoteip=203.0.113.9'), `请求体应含三项参数：${body}`);
+  assert.ok(body.includes('secret=s3cret') && body.includes('response=tok-1') && body.includes('remoteip=203.0.113.9') && body.includes('idempotency_key='), `请求体应含 secret、token、来源 IP 与幂等键：${body}`);
   assert.ok(calls[0].options.signal, '应带超时信号');
 });
 
@@ -129,12 +129,38 @@ test('verifyTurnstile：无效 token 拒绝并带回错误码，缺 token 不发
   assert.equal(called, 1, '缺 token 时不应发起回源请求');
 });
 
-test('verifyTurnstile：网络错误、非 2xx 与坏 JSON 一律归为 network（fail-closed）', async () => {
-  const thrown = await verifyTurnstile({ secret: 's', response: 't', fetchImpl: async () => { throw new Error('ECONNRESET'); } });
+test('verifyTurnstile：网络错误、非 2xx 与坏 JSON 一律归为 network（fail-closed，重试后仍失败）', async () => {
+  const thrown = await verifyTurnstile({ secret: 's', response: 't', fetchImpl: async () => { throw new Error('ECONNRESET'); }, retryDelayMs: 0 });
   assert.equal(thrown.success, false);
   assert.equal(thrown.reason, 'network');
-  const badStatus = await verifyTurnstile({ secret: 's', response: 't', fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({}) }) });
+  assert.equal(thrown.detail, 'ECONNRESET', 'network 结果带失败详情供日志定位');
+  const badStatus = await verifyTurnstile({ secret: 's', response: 't', fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({}) }), retryDelayMs: 0 });
   assert.equal(badStatus.reason, 'network');
-  const badJson = await verifyTurnstile({ secret: 's', response: 't', fetchImpl: async () => ({ ok: true, json: async () => { throw new Error('not json'); } }) });
+  assert.equal(badStatus.detail, 'http:503');
+  const badJson = await verifyTurnstile({ secret: 's', response: 't', fetchImpl: async () => ({ ok: true, json: async () => { throw new Error('not json'); } }), retryDelayMs: 0 });
   assert.equal(badJson.reason, 'network');
+  assert.equal(badJson.detail, 'bad-json');
+});
+
+test('verifyTurnstile：回源失败重试一次，重试共享同一幂等键，新调用换新键', async () => {
+  const bodies = [];
+  const fetchImpl = async (url, options) => { bodies.push(String(options.body)); throw new Error('ETIMEDOUT'); };
+  const verdict = await verifyTurnstile({ secret: 's', response: 't', fetchImpl, retryDelayMs: 0 });
+  assert.equal(verdict.reason, 'network');
+  assert.equal(bodies.length, 2, '网络失败应自动重试一次');
+  const key1 = new URLSearchParams(bodies[0]).get('idempotency_key');
+  const key2 = new URLSearchParams(bodies[1]).get('idempotency_key');
+  assert.ok(key1 && key1 === key2, '两次请求必须共享同一 idempotency_key');
+  assert.match(key1, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/, '幂等键是 UUID');
+  await verifyTurnstile({ secret: 's', response: 't', fetchImpl, retryDelayMs: 0 });
+  const key3 = new URLSearchParams(bodies[2]).get('idempotency_key');
+  assert.notEqual(key3, key1, '每次校验各自生成新键，token 一次性语义不放宽');
+});
+
+test('verifyTurnstile：首次回源网络失败、重试成功则放行', async () => {
+  let calls = 0;
+  const fetchImpl = async () => { calls += 1; if (calls === 1) throw new Error('socket hang up'); return { ok: true, json: async () => ({ success: true }) }; };
+  const verdict = await verifyTurnstile({ secret: 's', response: 't', fetchImpl, retryDelayMs: 0 });
+  assert.equal(verdict.success, true, '第二次回源成功即放行');
+  assert.equal(calls, 2);
 });

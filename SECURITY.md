@@ -46,7 +46,7 @@
 
 `.env` 配置 `TURNSTILE_SITEKEY` 与 `TURNSTILE_SECRET`（重启生效）即在 `/admin/login` 启用，默认关闭：
 
-- 顺序固定为**人机验证 → 登录限流 → 密码校验 → 发 session**：表单里的 token 回源 Cloudflare `siteverify` 校验（5 分钟有效、一次性），并核对返回的 `hostname` 是否属于本站——预期集为当前请求 Host、`ADMIN_HOSTS` 全部项与 `PUBLIC_BASE_URL` 的域名（即本站任一合法后台入口，公网域名与内网自建 DNS 域名可并存），在别处跑出来的 token 一律拒绝；token 缺失、未通过、域名不符或 Cloudflare 接口不可达均拒绝（fail-closed），计入失败登录审计（`reason: turnstile:*`）。
+- 顺序固定为**人机验证 → 登录限流 → 密码校验 → 发 session**：表单里的 token 回源 Cloudflare `siteverify` 校验（5 分钟有效、一次性），并核对返回的 `hostname` 是否属于本站——预期集为当前请求 Host、`ADMIN_HOSTS` 全部项与 `PUBLIC_BASE_URL` 的域名（即本站任一合法后台入口，公网域名与内网自建 DNS 域名可并存），在别处跑出来的 token 一律拒绝；token 缺失、未通过、域名不符或 Cloudflare 接口不可达均拒绝（fail-closed），计入失败登录审计（`reason: turnstile:*`）。回源网络错误（超时 / 非 2xx / 坏 JSON）会带幂等键 `idempotency_key` 自动重试一次，仍失败才拒绝并写服务日志（reason / codes / detail）——同一 token 的两次请求共享一个键，Cloudflare 侧视为同一次校验，不因 token 已被消费而误判。
 - 验证不通过**不消耗**登录限流额度：垃圾 POST 无法借此把管理员顶进 429；人机验证自身由 Cloudflare 侧防护。
 - CSP 仅登录页放行 `challenges.cloudflare.com` 的脚本与组件 iframe，其余页面（含后台其他页）不放行任何第三方源；不启用时页面与响应头零变化。
 - 启用前提：访问后台的浏览器能加载组件、服务器能访问 `siteverify`；Cloudflare 控制台里该 widget 的 **Hostnames 需覆盖实际使用的访问域名**（内网 DNS 域名同理，未登记的域名上组件不渲染），反向代理须透传 `Host`（既有要求，hostname 核对同样依赖它）；两键缺一启动报错。停用 = 清空两键重启。
