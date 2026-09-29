@@ -2,6 +2,10 @@
 // Copyright (C) 2026 QNLanYang (全能岚漾)
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { Agent, request } from 'node:https';
+import { lookup as dnsLookup } from 'node:dns';
+import { resolve4 } from 'node:dns/promises';
+import { kv, logDebug, logWarn } from './log.js';
 
 export const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 export const randomToken = (bytes = 32) => randomBytes(bytes).toString('base64url');
@@ -80,22 +84,111 @@ export function decrypt(payload, secret) {
 // 归一化域名：去端口、去方括号、小写——与 server.js 的后台 Host 白名单同一套口径。
 const normalizeHostname = (value) => { try { return new URL(`http://${String(value ?? '').trim()}`).hostname.toLowerCase().replace(/^\[|\]$/g, ''); } catch { return ''; } };
 
+// ---- Turnstile 回源的出网优化：进程内解析缓存 + keepAlive 连接池 ----
+// 动机：出网解析偶发很慢（同一时刻实测 c-ares 0.5s、getaddrinfo 7s），而登录回源等不起；
+// 且域名 TTL 只有 66 秒，缓存挡不住。做法：
+//   ① 解析走 c-ares（dns.resolve4）并把结果缓存在进程内，绕开 getaddrinfo 的多网卡/后缀流程；
+//   ② 回源用 keepAlive 的 https.Agent 复用 TCP+TLS，常态下既不查 DNS 也不握手；
+//   ③ 传输失败即作废缓存并后台重解析（应对 Cloudflare 换 IP），本次重试回落系统解析。
+const TURNSTILE_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+const TURNSTILE_HOST = 'challenges.cloudflare.com';
+
+/** 进程内 IPv4 解析缓存：TTL 内直接用；失败沿用旧值（没有旧值则留给回落解析）。 */
+export function createIpCache({ host, resolve = resolve4, ttlMs = 10 * 60 * 1000, warnMs = 2000 } = {}) {
+  const state = { ips: [], at: 0, inflight: null };
+  const refresh = async ({ force = false } = {}) => {
+    if (!force && state.ips.length && Date.now() - state.at < ttlMs) return state.ips;
+    if (state.inflight) return state.inflight;
+    const startedAt = Date.now();
+    state.inflight = (async () => {
+      try {
+        const ips = (await resolve(host)).filter(Boolean);
+        const ms = Date.now() - startedAt;
+        if (ips.length) { state.ips = ips; state.at = Date.now(); }
+        if (ms >= warnMs) logWarn('turnstile.resolve.slow', kv({ host, ms, ip: ips[0] }));
+        else logDebug('turnstile.resolve', kv({ host, ms, ip: ips[0] }));
+        return state.ips;
+      } catch (error) {
+        logWarn('turnstile.resolve.failed', kv({ host, message: error?.message }));
+        return state.ips;
+      } finally {
+        state.inflight = null;
+      }
+    })();
+    return state.inflight;
+  };
+  return {
+    refresh,
+    get: () => state.ips,
+    invalidate: () => { state.ips = []; state.at = 0; }
+  };
+}
+
+const turnstileIps = createIpCache({ host: TURNSTILE_HOST });
+
+// net 的 lookup：命中缓存立刻返回 IPv4；未命中回落系统解析（只取 IPv4，避免 IPv6 优先的额外等待）
+const turnstileLookup = (hostname, options, callback) => {
+  const ips = turnstileIps.get();
+  if (hostname === TURNSTILE_HOST && ips.length) return callback(null, ips[0], 4);
+  return dnsLookup(hostname, { ...options, family: 4 }, callback);
+};
+
+const turnstileAgent = new Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSockets: 2, lookup: turnstileLookup });
+
+/** 启动时与定时保温：把解析结果提前放进缓存（只在启用人机验证时由 server.js 调用）。 */
+export const warmTurnstileDns = () => turnstileIps.refresh({ force: true });
+export function startTurnstileDnsWarmup(intervalMs = 5 * 60 * 1000) {
+  void warmTurnstileDns();
+  const timer = setInterval(() => { void warmTurnstileDns(); }, intervalMs);
+  timer.unref?.();
+  return timer;
+}
+
+/** fetch 形态的最小实现（只需 ok / status / json）：走 keepAlive agent，传输失败即作废解析缓存。 */
+function httpsFetch(url, init) {
+  return new Promise((resolve, reject) => {
+    const body = String(init?.body ?? '');
+    const req = request(url, {
+      method: init?.method || 'GET',
+      agent: turnstileAgent,
+      headers: { ...(init?.headers || {}), 'content-length': Buffer.byteLength(body) },
+      signal: init?.signal
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => resolve({
+        ok: res.statusCode >= 200 && res.statusCode < 300,
+        status: res.statusCode,
+        json: async () => JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      }));
+    });
+    req.on('error', (error) => {
+      turnstileIps.invalidate();
+      void turnstileIps.refresh({ force: true });
+      if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') return reject(new Error('timeout'));
+      reject(error);
+    });
+    req.end(body);
+  });
+}
+
 // Turnstile 服务端校验：把表单回传的 token 回源 Cloudflare siteverify（token 5 分钟有效、一次性）。
 // reason：missing = 页面没带 token；invalid = 回源明确未通过；hostname = 成功但来源域名不在预期集；
 // network = 请求没完成（超时/非 2xx/非 JSON，带 detail 供调用方写日志）。expectedHostnames 非空时校验返回的 hostname。
-// 回源是出网请求，冷连接偶发变慢会被超时掐断：network 结果会隔 retryDelayMs 自动再试一次（其余 reason 是确定性结论，不重试）。
+// 回源是出网请求，偶发变慢会被超时掐断：network 结果会隔 retryDelayMs 自动再试一次（其余 reason 是确定性结论，不重试）。
 // 两次请求共享同一个 idempotency_key（Cloudflare 为可重试校验提供的幂等键）：若第一次实际已被 CF 处理、
 // 只是响应在网络中丢失，重试会回放同一结果，不会因 token 已消费而误判；每次调用各自生成新键，
 // 跨请求的 token 一次性语义不放宽。
-// fetchImpl 可注入，供单测在无真实网络时覆盖各分支。
-export async function verifyTurnstile({ secret, response, remoteip = '', expectedHostnames = [], fetchImpl = globalThis.fetch, timeoutMs = 5000, retryDelayMs = 250 }) {
+// fetchImpl 可注入（默认实现见上面的 httpsFetch），供单测在无真实网络时覆盖各分支。
+export async function verifyTurnstile({ secret, response, remoteip = '', expectedHostnames = [], fetchImpl = httpsFetch, timeoutMs = 5000, retryDelayMs = 250 }) {
+  const startedAt = Date.now();
   const token = String(response || '');
-  if (!token) return { success: false, reason: 'missing', codes: [] };
+  if (!token) return { success: false, reason: 'missing', codes: [], attempts: 0, ms: 0 };
   const idempotencyKey = randomUUID();
   const attempt = async () => {
     let res;
     try {
-      res = await fetchImpl('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      res = await fetchImpl(TURNSTILE_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ secret, response: token, ...(remoteip ? { remoteip } : {}), idempotency_key: idempotencyKey }),
@@ -104,7 +197,17 @@ export async function verifyTurnstile({ secret, response, remoteip = '', expecte
     } catch (error) {
       return { success: false, reason: 'network', codes: [], detail: String(error?.message || 'fetch failed').slice(0, 120) };
     }
-    if (!res || !res.ok) return { success: false, reason: 'network', codes: [], detail: `http:${res?.status ?? 'unknown'}` };
+    if (!res || !res.ok) {
+      // 4xx 通常是配置或请求问题（如 invalid-input-secret / invalid-input-response），带上服务端返回的
+      // error-codes 便于排查；解析不出 error-codes 才按网络故障处理（并保留 http:状态码）。
+      let codes = [];
+      try {
+        const data = await res.json();
+        codes = Array.isArray(data && data['error-codes']) ? data['error-codes'].slice(0, 8).map(String) : [];
+      } catch { codes = []; }
+      if (codes.length) return { success: false, reason: 'invalid', codes };
+      return { success: false, reason: 'network', codes: [], detail: `http:${res?.status ?? 'unknown'}` };
+    }
     try {
       const data = await res.json();
       if (data && data.success === true) {
@@ -124,9 +227,12 @@ export async function verifyTurnstile({ secret, response, remoteip = '', expecte
     }
   };
   let verdict = await attempt();
+  let attempts = 1;
   if (verdict.reason === 'network') {
     if (retryDelayMs > 0) await new Promise((resolve) => { setTimeout(resolve, retryDelayMs); });
     verdict = await attempt();
+    attempts = 2;
   }
-  return verdict;
+  // attempts / ms 只用于日志与排查（回源了几次、总共多久），不改变判定语义
+  return { ...verdict, attempts, ms: Date.now() - startedAt };
 }

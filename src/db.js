@@ -4,6 +4,7 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { kv, logInfo } from './log.js';
 import { decrypt, encrypt, randomCode, randomId, randomToken, sha256 } from './security.js';
 
 const now = () => new Date().toISOString();
@@ -118,11 +119,21 @@ export function createDb(config) {
     users: db.prepare('SELECT id, username, role, active, created_at, updated_at, last_login_at FROM users ORDER BY role DESC, username'),
     setting: db.prepare('SELECT value, encrypted FROM app_settings WHERE key=?'),
     saveSetting: db.prepare(`INSERT INTO app_settings(key,value,encrypted,updated_at) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, encrypted=excluded.encrypted, updated_at=excluded.updated_at`),
-    audit: db.prepare('INSERT INTO audit_log(actor_id,action,target_type,target_id,source_ip,detail,created_at) VALUES(?,?,?,?,?,?,?)')
+    audit: db.prepare('INSERT INTO audit_log(actor_id,action,target_type,target_id,source_ip,detail,created_at) VALUES(?,?,?,?,?,?,?)'),
+    userName: db.prepare('SELECT username FROM users WHERE id=?')
   };
 
+  /** 审计：写库（页面可筛可查）并同步输出一行日志（stdout，交外置进程收集）。
+   *  业务操作与安全事件共用这一处水闸，所以新增审计动作会自动同时进日志。 */
   function audit(actorId, action, targetType, targetId, sourceIp, detail = null) {
     statement.audit.run(actorId || null, action, targetType, targetId == null ? null : String(targetId), sourceIp || null, detail ? JSON.stringify(detail) : null, now());
+    const actor = actorId ? (statement.userName.get(actorId) || {}).username || `#${actorId}` : '-';
+    logInfo(action, kv({
+      actor,
+      target: `${targetType}${targetId == null ? '' : `:${targetId}`}`,
+      ip: sourceIp,
+      detail: detail ? JSON.stringify(detail).slice(0, 200) : ''
+    }));
   }
 
   /** 券面状态：只看券面自己的开关与日期。 */

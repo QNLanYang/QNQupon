@@ -421,7 +421,44 @@ test('面板说明入口：纯 CSS 气泡，零脚本', () => {
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   assert.match(css, /\.tip\{position:absolute;right:16px;top:14px;z-index:5\}/, '说明入口固定在面板右上角');
   assert.match(css, /\.tip:hover \.tip-body,\.tip:focus-within \.tip-body\{opacity:1;visibility:visible/, '悬浮或获得焦点（触屏点按）即显示、失焦收起');
-  assert.ok(!app.includes('tip'), '气泡不靠脚本：app.js 里没有任何相关代码');
+  assert.ok(!app.includes('tip-body') && !app.includes('.tip'), '气泡不靠脚本：app.js 里没有任何气泡相关代码');
+});
+
+test('操作反馈：服务端直接渲染右上角卡片（无 JS 也可见），消息不再进链接', () => {
+  const html = dashboard({ user, csrf: 'csrf-token', flash: { type: 'success', message: '券面已移入回收站。' }, coupons: [], stats: { valid: 0, used: 0, expiring: 0, recycled: 0 } });
+  assert.match(html, /<div class="toast-host" data-toast-host><div class="toast success" role="status">/, '默认输出卡片，无脚本也看得到');
+  assert.match(html, /<p class="toast-message">券面已移入回收站。<\/p>/);
+  assert.match(html, /<button type="button" class="toast-close" aria-label="关闭">/, '有手动关闭按钮');
+  assert.ok(!html.includes('notice='), '消息不再拼进链接');
+  assert.ok(!html.includes('class="flash'), '不再用旧的顶部提示条');
+
+  const empty = dashboard({ user, csrf: 'csrf-token', flash: null, coupons: [], stats: { valid: 0, used: 0, expiring: 0, recycled: 0 } });
+  assert.match(empty, /<div class="toast-host" data-toast-host><\/div>/, '没有反馈时容器留空（前端反馈仍可用）');
+});
+
+test('表单提交升级为局部刷新：不整页跳转，出错回退', () => {
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(app, /document\.body\.classList\.contains\('admin-body'\)/, '只接管后台表单，客人页面保持整页跳转');
+  assert.match(app, /URLSearchParams\(\)/, '请求体用 application/x-www-form-urlencoded（FormData 会发 multipart，服务端回 415）');
+  assert.match(app, /new DOMParser\(\)\.parseFromString/, '服务端照旧渲染整页，前端只取 main 换上去');
+  assert.match(app, /window\.scrollTo\(0, scrollY\)/, '换页后保持滚动位置（不跳回顶端）');
+  assert.match(app, /restoreFields\(snapshot, action\)/, '其他表单里已输入的内容不被冲掉');
+  assert.match(app, /history\.replaceState\(\{\}, '', response\.url\)/, '地址栏同步到重定向目标，且不新增历史条目');
+  assert.match(app, /form\.dataset\.ajaxFallback/, '出错回退成普通提交，行为不倒退');
+  assert.match(app, /form\.hasAttribute\('data-no-ajax'\)/, '个别表单可用 data-no-ajax 退出局部刷新');
+  assert.match(app, /for \(const button of buttons\) button\.disabled = true/, '请求期间禁用按钮，防重复提交');
+});
+
+test('操作反馈卡片：样式与前端接管（纯 CSS 动画 + 统一样式入口）', () => {
+  const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(css, /\.toast-host\{position:fixed;top:var\(--toast-top,72px\);right:16px/, '桌面固定在右上角、贴顶栏下沿');
+  assert.match(css, /@media \(max-width:720px\)\{\.toast-host\{left:12px;right:12px;width:auto\}\}/, '窄屏改为顶部通栏，避免被状态栏遮挡');
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\)\{\.toast\.in,\.toast\.out\{animation:none\}\}/, '尊重系统"减少动效"');
+  assert.match(app, /function showToast\(/, '前端反馈与卡片共用同一套样式与行为');
+  assert.match(app, /--toast-top/, '贴顶栏下沿：按顶栏实际高度定位，窄屏换行也不会被压住');
+  assert.match(app, /topbar\.getBoundingClientRect\(\)\.height \+ 10/, '用顶栏高度而不是视口坐标——后者在页面滚动后会算出负值，把卡片顶到屏幕外');
+  assert.match(app, /while \(toastHost\.children\.length > 4\)/, '同时最多 4 条，超出先收最旧的');
 });
 
 test('三态主题：浅色变量中枢 + 深色双入口', () => {

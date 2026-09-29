@@ -53,8 +53,10 @@ fc-cache -fv            # 刷新字体缓存后重启服务
 | `COOKIE_SECURE` | `true` | 全站 HTTPS 时保持 `true`；仅纯 HTTP 联调时才临时设 `false` |
 | `SESSION_HOURS` | `12` | 后台登录会话有效期（小时），允许 1–720 |
 | `PASSWORD_MIN_LENGTH` | `12` | 密码最少位数，允许 8–128；前后台校验与表单提示随之变化 |
-| `RATE_LIMIT_*` | 见 `.env.example` | 各入口限流，格式「次数/窗口」（如 `10/10m`）；写法非法回退默认值，对应关系见 SECURITY.md「限流」 |
+| `RATE_LIMIT_*` | 见 `.env.example` | 各入口限流，格式「次数/窗口」（如 `10/10m`）；写 `off`（或 `0/1m`）关闭该入口；写法非法回退默认值，对应关系见 SECURITY.md「限流」 |
+| `LOG_LEVEL` | `info` | 服务日志级别：`debug` / `info` / `warn` / `error` / `off`；写法非法回退 `info`。日志写 stdout/stderr，由 systemd Journal / nssm 等外置进程收集与轮转（应用不写文件） |
 | `TURNSTILE_SITEKEY` / `TURNSTILE_SECRET` | 空 = 关闭 | 登录页 Cloudflare Turnstile 人机验证：两键必须同时填写、改后重启生效；启用前提与停用方法见 SECURITY.md「登录人机验证」 |
+| `TURNSTILE_TIMEOUT_MS` | `5000` | 人机验证回源单次超时（毫秒，1000–20000），写法非法回退默认。回源已内置解析缓存（c-ares，10 分钟）与 keepAlive 连接复用，出网解析偶发慢的机器可调到 `15000`；连通性可用 `node scripts/check-turnstile.js` 自检（加 `--secret=` 可验证密钥有效性） |
 
 以上防护参数改 `.env` 后需重启；**业务保留参数不走 `.env`**——登录后台「服务设置」直接修改（回收站静置/保留天数、确认码可查小时数、临期提醒天数），保存即生效。
 

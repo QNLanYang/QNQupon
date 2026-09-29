@@ -96,6 +96,146 @@ async function copyText(text) {
   return ok;
 }
 
+// 操作反馈卡片：服务端已在 HTML 里输出（无 JS 也可见），这里接管滑入、超时淡出、关闭、悬停暂停与堆叠；
+// 前端产生的反馈（如复制链接）也用同一套，保证样式与行为一致。
+const toastHost = document.querySelector('[data-toast-host]');
+const TOAST_TTL = { success: 5000, info: 5000, error: 8000 };
+
+// 卡片贴着顶栏下沿显示：顶栏在文档顶部不吸顶，所以用它的高度而不是视口坐标
+// （用视口坐标的话，页面一滚动就会算出负值，把卡片顶到屏幕外）；窄屏顶栏会换行变高，量高度同样适用。
+const topbar = document.querySelector('.topbar');
+function placeToasts() {
+  if (!topbar || !toastHost) return;
+  document.documentElement.style.setProperty('--toast-top', `${Math.round(topbar.getBoundingClientRect().height + 10)}px`);
+}
+placeToasts();
+window.addEventListener('resize', placeToasts);
+// 字体加载完成后顶栏高度才最终稳定，再量一次避免卡片差几像素
+window.addEventListener('load', placeToasts);
+
+function dismissToast(card) {
+  if (!card || card.dataset.closing) return;
+  card.dataset.closing = '1';
+  card.classList.add('out');
+  setTimeout(() => card.remove(), 200);
+}
+
+function armToast(card) {
+  const ttl = TOAST_TTL[card.classList.contains('error') ? 'error' : 'success'];
+  card.classList.add('in');
+  card.querySelector('.toast-close')?.addEventListener('click', () => dismissToast(card));
+  let timer = setTimeout(() => dismissToast(card), ttl);
+  const pause = () => clearTimeout(timer);
+  const resume = () => { clearTimeout(timer); timer = setTimeout(() => dismissToast(card), ttl); };
+  card.addEventListener('mouseenter', pause);
+  card.addEventListener('mouseleave', resume);
+  card.addEventListener('focusin', pause);
+  card.addEventListener('focusout', resume);
+}
+
+function showToast(message, type = 'success') {
+  if (!toastHost) return;
+  const card = document.createElement('div');
+  card.className = `toast ${type}`;
+  card.setAttribute('role', 'status');
+  const text = document.createElement('p');
+  text.className = 'toast-message';
+  text.textContent = message;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'toast-close';
+  close.setAttribute('aria-label', '关闭');
+  close.textContent = '×';
+  card.append(text, close);
+  toastHost.append(card);
+  while (toastHost.children.length > 4) dismissToast(toastHost.firstElementChild); // 最多同时 4 条，超出先收最旧的
+  armToast(card);
+}
+
+const armAllToasts = () => { for (const card of document.querySelectorAll('.toast')) armToast(card); };
+armAllToasts();
+
+// ---- 表单提交升级为局部刷新（仅后台页；无脚本或出错时行为与现在完全一致）----
+// 服务端照旧渲染整页并重定向，这里只做两件事：把新页面的 <main> 与反馈卡片换上去、恢复滚动位置，
+// 于是既拿到服务端渲染的反馈卡片，又不会整页闪一下、跳回顶部、把其他面板里没提交的内容冲掉。
+const AJAX_SKIP = ['/admin/logout', '/admin/login', '/admin/setup'];
+
+// 记下屏幕上各字段的值（按 表单action|名称|类型|序号 定位），换页后把"用户改过、而服务端没变"的还原回去
+function collectFields() {
+  const snapshot = new Map();
+  const seen = new Map();
+  for (const el of document.querySelectorAll('main.container input, main.container textarea, main.container select')) {
+    if (!el.name || el.disabled || el.type === 'hidden' || el.type === 'password') continue;
+    const key = `${el.form?.getAttribute('action') || ''}|${el.name}|${el.type}`;
+    const index = (seen.get(key) || 0) + 1;
+    seen.set(key, index);
+    snapshot.set(`${key}|${index}`, { value: el.value, checked: el.checked });
+  }
+  return snapshot;
+}
+
+function restoreFields(snapshot, submittedAction) {
+  const seen = new Map();
+  for (const el of document.querySelectorAll('main.container input, main.container textarea, main.container select')) {
+    if (!el.name || el.disabled || el.type === 'hidden' || el.type === 'password') continue;
+    const action = el.form?.getAttribute('action') || '';
+    if (action === submittedAction) continue; // 本次提交的表单以服务端渲染为准（数据已经写进去了）
+    const key = `${action}|${el.name}|${el.type}`;
+    const index = (seen.get(key) || 0) + 1;
+    seen.set(key, index);
+    const row = snapshot.get(`${key}|${index}`);
+    if (!row) continue;
+    if (row.value !== el.value) el.value = row.value;
+    if (row.checked !== el.checked) el.checked = row.checked;
+  }
+}
+
+document.addEventListener('submit', async (event) => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement)) return;
+  if (!document.body.classList.contains('admin-body')) return; // 只接管后台；客人页面保持整页跳转
+  if (event.defaultPrevented) return;                          // 已被确认框拦下，等它二次提交
+  if (form.dataset.ajaxFallback) { delete form.dataset.ajaxFallback; return; }
+  if (String(form.method).toLowerCase() !== 'post' || form.hasAttribute('data-no-ajax') || AJAX_SKIP.includes(form.getAttribute('action') || '')) return;
+
+  event.preventDefault();
+  const submitter = event.submitter instanceof HTMLElement ? event.submitter : null;
+  const action = form.getAttribute('action') || location.pathname;
+  const snapshot = collectFields();
+  // 用 URLSearchParams 而不是 FormData：后者会发 multipart/form-data，服务端只解析 application/x-www-form-urlencoded
+  const body = new URLSearchParams();
+  for (const [name, value] of new FormData(form)) body.append(name, typeof value === 'string' ? value : value.name);
+  if (submitter?.name && !body.has(submitter.name)) body.append(submitter.name, submitter.value);
+  const buttons = form.querySelectorAll('button, input[type=submit]');
+  for (const button of buttons) button.disabled = true; // 防重复提交（原先靠整页刷新挡住）
+
+  try {
+    const response = await fetch(action, { method: 'POST', body, credentials: 'same-origin', headers: { accept: 'text/html' } });
+    const type = response.headers.get('content-type') || '';
+    if (!response.ok || !type.includes('text/html')) throw new Error('fallback');
+    const next = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const nextMain = next.querySelector('main.container');
+    const currentMain = document.querySelector('main.container');
+    if (!nextMain || !currentMain) throw new Error('fallback');
+
+    const scrollY = window.scrollY;
+    currentMain.replaceWith(nextMain);
+    const nextHost = next.querySelector('[data-toast-host]');
+    if (nextHost) document.querySelector('[data-toast-host]')?.replaceWith(nextHost);
+    document.title = next.title;
+    if (response.url && response.url !== location.href) history.replaceState({}, '', response.url);
+    placeToasts();
+    armAllToasts();
+    restoreFields(snapshot, action);
+    window.scrollTo(0, scrollY); // 保持原位：不再跳回页面顶端
+  } catch {
+    for (const button of buttons) button.disabled = false;
+    form.dataset.ajaxFallback = '1';
+    if (typeof form.requestSubmit === 'function') form.requestSubmit(submitter || undefined);
+    else form.submit();
+  }
+});
+
 document.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-copy-link]');
   if (!button) return;
@@ -107,8 +247,10 @@ document.addEventListener('click', async (event) => {
     const data = await response.json();
     if (!data.url || !(await copyText(data.url))) throw new Error('复制失败');
     button.textContent = '已复制 ✓';
+    showToast('核销链接已复制，可直接发给客人。');
   } catch {
     button.textContent = '复制失败，请打开详情页';
+    showToast('复制失败，请打开详情页手动复制。', 'error');
   }
   button.disabled = false;
   setTimeout(() => { button.textContent = original; }, 2000);

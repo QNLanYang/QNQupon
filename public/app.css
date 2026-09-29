@@ -17,6 +17,22 @@
 .tip:hover .tip-body,.tip:focus-within .tip-body{opacity:1;visibility:visible;transform:none}
 .tip .tip-body p{margin:0 0 6px}
 .tip .tip-body p:last-child{margin-bottom:0}
+/* 操作反馈卡片（右上角滑入）：HTML 默认就输出，无 JS 也可见；app.js 负责滑入、超时淡出、关闭与堆叠。
+   优先级用 --good/--bad/--info 三条语义色，浅深色随主题变量自动切换。 */
+.toast-host{position:fixed;top:var(--toast-top,72px);right:16px;z-index:80;display:flex;flex-direction:column;gap:10px;width:min(92vw,380px);pointer-events:none}
+.toast{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--line);border-left:4px solid var(--info);border-radius:12px;background:var(--paper);color:var(--ink);font-size:13.5px;line-height:1.6;box-shadow:var(--shadow-card)}
+.toast.success{border-left-color:var(--good)}
+.toast.error{border-left-color:var(--bad)}
+.toast.info{border-left-color:var(--info)}
+.toast-message{margin:0;flex:1 1 auto;overflow-wrap:anywhere}
+.toast-close{flex:0 0 auto;margin:-2px -2px 0 0;padding:0 4px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:17px;line-height:1;cursor:pointer}
+.toast-close:hover{color:var(--ink)}
+.toast.in{animation:qn-toast-in .2s ease-out}
+.toast.out{animation:qn-toast-out .18s ease-in forwards}
+@keyframes qn-toast-in{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+@keyframes qn-toast-out{to{opacity:0;transform:translateX(14px)}}
+@media (max-width:720px){.toast-host{left:12px;right:12px;width:auto}}
+@media (prefers-reduced-motion:reduce){.toast.in,.toast.out{animation:none}}
 .stats .stat-link{display:block;color:inherit;text-decoration:none}.stats .stat-link:hover{text-decoration:underline}
 .page-head p a{color:var(--accent);font-weight:700;text-decoration:none}.page-head p a:hover{text-decoration:underline}
 .result{padding:22px 20px;border-radius:18px;margin-top:26px;text-align:center;border:2px solid transparent}.result h2{margin:0 0 8px;font-size:26px}.result p{margin:8px 0}.result-lead{font-weight:700}.result-meta{font-size:13px;opacity:.82}

@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { encrypt, decrypt, hashPassword, verifyPassword, normalizeCode, randomToken, randomCode, randomId, sha256, safeEqual, verifyTurnstile } from '../src/security.js';
+import { createIpCache, encrypt, decrypt, hashPassword, verifyPassword, normalizeCode, randomToken, randomCode, randomId, sha256, safeEqual, verifyTurnstile } from '../src/security.js';
 
 const key = 'test-key-0123456789';
 
@@ -163,4 +163,45 @@ test('verifyTurnstile：首次回源网络失败、重试成功则放行', async
   const verdict = await verifyTurnstile({ secret: 's', response: 't', fetchImpl, retryDelayMs: 0 });
   assert.equal(verdict.success, true, '第二次回源成功即放行');
   assert.equal(calls, 2);
+});
+
+test('回源解析缓存：c-ares 结果进缓存、TTL 内不重复查询、可强制刷新、失败沿用旧值、可作废', async () => {  let calls = 0;
+  let fail = false;
+  const cache = createIpCache({
+    host: 'example.test',
+    ttlMs: 60_000,
+    warnMs: 10_000,
+    resolve: async () => { calls += 1; if (fail) throw new Error('EAI_AGAIN'); return ['1.1.1.1', '2.2.2.2']; }
+  });
+
+  assert.deepEqual(cache.get(), [], '初始没有缓存');
+  assert.deepEqual(await cache.refresh(), ['1.1.1.1', '2.2.2.2']);
+  assert.equal(calls, 1);
+  await cache.refresh();
+  assert.equal(calls, 1, 'TTL 内直接用缓存，不再查');
+  await cache.refresh({ force: true });
+  assert.equal(calls, 2, 'force 时强制刷新');
+
+  fail = true;
+  assert.deepEqual(await cache.refresh({ force: true }), ['1.1.1.1', '2.2.2.2'], '解析失败沿用旧值，不影响已建立的连接');
+  cache.invalidate();
+  assert.deepEqual(cache.get(), [], '传输失败后作废缓存，下次重新解析');
+  fail = false;
+  assert.deepEqual(await cache.refresh(), ['1.1.1.1', '2.2.2.2']);
+});
+
+test('回源 4xx 带 error-codes：按服务端原因处理（如密钥无效），不误报为网络故障', async () => {
+  let calls = 0;
+  const fetchImpl = async () => { calls += 1; return { ok: false, status: 400, json: async () => ({ success: false, 'error-codes': ['invalid-input-secret'] }) }; };
+  const verdict = await verifyTurnstile({ secret: 's', response: 't', fetchImpl, retryDelayMs: 0 });
+  assert.equal(verdict.reason, 'invalid', '配置类问题不再算网络故障');
+  assert.deepEqual(verdict.codes, ['invalid-input-secret']);
+  assert.equal(calls, 1, '确定性结论不重试');
+});
+
+test('回源 4xx 且响应体无法解析：仍按网络故障处理，并保留状态码便于排查', async () => {
+  const fetchImpl = async () => ({ ok: false, status: 502, json: async () => { throw new Error('bad-json'); } });
+  const verdict = await verifyTurnstile({ secret: 's', response: 't', fetchImpl, retryDelayMs: 0 });
+  assert.equal(verdict.reason, 'network');
+  assert.equal(verdict.detail, 'http:502');
 });

@@ -12,11 +12,11 @@
 
 | 管理后台（概览） | 客人核销页 |
 | --- | --- |
-| ![管理后台](docs/screenshots/admin-dashboard.png) | ![核销页](docs/screenshots/public-redeem.png) |
+| <img src="docs/screenshots/admin-dashboard.png" width="461" height="340" alt="管理后台（概览）"> | <img src="docs/screenshots/public-redeem.png" width="318" height="340" alt="客人核销页"> |
 
 | 核销凭证查询 | PNG 券面 |
 | --- | --- |
-| ![凭证查询](docs/screenshots/public-verify.png) | ![PNG 券面](docs/screenshots/coupon-png.png) |
+| <img src="docs/screenshots/public-verify.png" width="308" height="340" alt="核销凭证查询"> | <img src="docs/screenshots/coupon-png.png" width="191" height="340" alt="PNG 券面"> |
 
 ## 两级模型：券面 + 券码
 

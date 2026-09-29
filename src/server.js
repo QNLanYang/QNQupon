@@ -7,14 +7,20 @@ import formbody from '@fastify/formbody';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { join } from 'node:path';
+import { createRequire } from 'node:module';
 import { mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import QRCode from 'qrcode';
 import { config } from './config.js';
 import { createDb } from './db.js';
-import { hashPassword, normalizeCode, randomToken, safeEqual, sha256, verifyPassword, verifyTurnstile } from './security.js';
+import { setFlash, takeFlash } from './flash.js';
+import { hashPassword, normalizeCode, randomToken, safeEqual, sha256, startTurnstileDnsWarmup, verifyPassword, verifyTurnstile } from './security.js';
 import { renderCouponPng } from './png-render.js';
 import { sendRedemptionMail, sendTestMail } from './mailer.js';
+import { configureLog, kv, logError, logInfo, logWarn, safePath } from './log.js';
 import * as view from './views.js';
+
+// 日志：单行写 stdout/stderr，外置进程（systemd Journal / nssm）收集轮转；时间与页面一致用北京时间。
+configureLog({ level: config.logLevel, timeZone: config.timezone });
 
 const db = createDb(config);
 const bootstrapToken = db.hasSuperAdmin() ? null : randomToken(24);
@@ -82,8 +88,12 @@ const loopbackHosts = new Set(['localhost', '127.0.0.1', '::1']);
 const hostName = (request) => { try { return new URL(`http://${request.headers.host || ''}`).hostname.toLowerCase().replace(/^\[|\]$/g, ''); } catch { return ''; } };
 const adminHostAllowed = (request) => { const name = hostName(request); return Boolean(name) && (loopbackHosts.has(name) || config.adminHosts.has(name)); };
 const clientIp = (request) => String(request.ip || '').slice(0, 64);
-const flashFrom = (request) => request.query?.notice ? { type: request.query.type === 'error' ? 'error' : 'success', message: String(request.query.notice).slice(0, 300) } : null;
-const redirectNotice = (reply, path, message, type = 'success') => reply.redirect(`${path}${path.includes('?') ? '&' : '?'}notice=${encodeURIComponent(message)}&type=${type}`);
+const flashFrom = (request, reply) => takeFlash(request, reply, { secure: config.cookieSecure });
+// 操作反馈随重定向下发（一次性 Cookie），不再把消息拼进查询串：链接干净、刷新不重复、客户端伪造不了
+const redirectNotice = (reply, path, message, type = 'success') => {
+  setFlash(reply, message, type, { secure: config.cookieSecure });
+  return reply.redirect(path);
+};
 const isDate = (value) => !value || /^\d{4}-\d{2}-\d{2}$/.test(value);
 // 日期筛选参数 → UTC ISO 边界：按北京时间自然日换算（起始 00:00、截止 23:59:59.999）；
 // 非法日期返回 null，不参与筛选。
@@ -178,8 +188,25 @@ function validateCoupon(body) {
   return data;
 }
 
+// 请求日志：一行一个请求（方法、脱敏路径、状态、耗时、客户端 IP）；静态资源不记。
+app.addHook('onResponse', async (request, reply) => {
+  const path = safePath(request.raw?.url || request.url);
+  if (path.startsWith('/assets/') || path === '/favicon.ico') return;
+  logInfo('request', kv({
+    method: request.method,
+    path,
+    status: reply.statusCode,
+    ms: Math.round(reply.elapsedTime),
+    ip: clientIp(request)
+  }));
+});
+
 app.setErrorHandler((error, request, reply) => {
   const status = error.statusCode || 500;
+  const path = safePath(request.raw?.url || request.url);
+  // 5xx 记堆栈前几行（排查用）；4xx 只记一行，避免预期内的拒绝刷屏
+  if (status >= 500) logError('error', kv({ method: request.method, path, status, message: error.message, stack: String(error.stack || '').split('\n').slice(1, 3).join(' <- ').trim() }));
+  else logWarn('error', kv({ method: request.method, path, status, message: error.message }));
   // 限流：给人话页面（原先会误显示成"查不到优惠券"/登录页）
   if (status === 429) {
     const raw = String(error.message || '');
@@ -281,8 +308,8 @@ const turnstileGate = async (request, reply) => {
   // 公网域名、内网自建 DNS 域名等多入口部署都能对上，token 必须是在这些入口之一跑出来的。
   const expectedHostnames = [hostName(request), ...config.adminHosts];
   try { expectedHostnames.push(new URL(config.publicBaseUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '')); } catch { /* PUBLIC_BASE_URL 异常时只信白名单内的 Host */ }
-  const verdict = await verifyTurnstile({ secret: config.turnstileSecret, response: String(request.body?.['cf-turnstile-response'] || ''), remoteip: clientIp(request), expectedHostnames: expectedHostnames.filter(Boolean) });
-  if (verdict.success) return;
+  const verdict = await verifyTurnstile({ secret: config.turnstileSecret, response: String(request.body?.['cf-turnstile-response'] || ''), remoteip: clientIp(request), expectedHostnames: expectedHostnames.filter(Boolean), timeoutMs: config.turnstileTimeoutMs });
+  if (verdict.success) { logInfo('turnstile.ok', kv({ attempts: verdict.attempts, ms: verdict.ms, ip: clientIp(request) })); return; }
   const message = verdict.reason === 'missing'
     ? '人机验证未完成：请等待人机验证通过后再登录；若页面未显示人机验证组件，请刷新页面重试。'
     : verdict.reason === 'network'
@@ -290,15 +317,16 @@ const turnstileGate = async (request, reply) => {
       : verdict.reason === 'hostname'
         ? '人机验证来源域名不符：请通过本系统的官方地址访问登录页。'
         : '人机验证未通过或已过期，请刷新页面后重试。';
-  // 失败同样入审计：reason 带 turnstile 前缀，与密码错误可区分；完整详情同步到服务日志（journalctl/终端）便于定位。
-  console.warn(`[turnstile] 登录人机验证未过：${verdict.reason}${verdict.codes?.length ? ` codes=${verdict.codes.join('|')}` : ''}${verdict.detail ? ` detail=${verdict.detail}` : ''}`);
+  // 未过的原因（reason / codes / detail / 回源次数与耗时）就靠这一行排查；失败同样入审计，reason 带 turnstile 前缀
+  logWarn('turnstile.rejected', kv({ reason: verdict.reason, codes: (verdict.codes || []).join('|'), attempts: verdict.attempts, ms: verdict.ms, detail: verdict.detail, ip: clientIp(request) }));
   db.audit(null, 'auth.login_failed', 'user', null, clientIp(request), { username: readText(request.body, 'username', 50), reason: `turnstile:${verdict.reason}` });
   return reply.code(403).type('text/html').send(view.login(loginCsrf(request, reply), message, config.turnstileSiteKey));
 };
 // 启用人机验证时把登录限流挪到 preValidation：闸门先验、限流后计（路由自带钩子排在限流处理器之前），
 // 没过人机验证的请求不消耗登录限流额度，垃圾 POST 无法借此把管理员顶进 429；关闭时维持原样（限流在 onRequest 最早拒绝）。
 app.post('/admin/login', {
-  config: { rateLimit: config.turnstileEnabled ? { ...config.rateLimits.login, hook: 'preValidation' } : config.rateLimits.login },
+  // 关掉登录限流时（off）保持 false 原样传给插件；开启人机验证时把限流挪到 preValidation
+  config: { rateLimit: config.rateLimits.login && config.turnstileEnabled ? { ...config.rateLimits.login, hook: 'preValidation' } : config.rateLimits.login },
   preValidation: turnstileGate
 }, async (request, reply) => {
   if (!adminHostAllowed(request)) return reply.code(404).send('Not found');
@@ -323,7 +351,7 @@ app.post('/admin/logout', async (request, reply) => {
   requireCsrf(request); db.deleteSession(request.cookies.admin_session);
   reply.clearCookie('admin_session', { path: '/admin' }); reply.clearCookie('admin_csrf', { path: '/admin' }); return reply.redirect('/admin/login');
 });
-app.get('/admin/profile', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; return reply.type('text/html').send(view.profilePage({ user, csrf: user.csrf, flash: flashFrom(request), passwordMin: config.passwordMinLength })); });
+app.get('/admin/profile', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; return reply.type('text/html').send(view.profilePage({ user, csrf: user.csrf, flash: flashFrom(request, reply), passwordMin: config.passwordMinLength })); });
 app.post('/admin/profile/username', { config: { rateLimit: config.rateLimits.profile } }, async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; try { requireCsrf(request); const account = db.userById(user.id); const username = readText(request.body, 'username', 50); if (!/^[\w.-]{3,50}$/.test(username) || !verifyPassword(String(request.body?.password || ''), account.password_hash)) throw new Error('用户名格式无效或当前密码错误。'); db.setUsername(user.id, username); db.deleteSession(request.cookies.admin_session); db.audit(user.id, 'user.rename_self', 'user', user.id, clientIp(request)); reply.clearCookie('admin_session', { path: '/admin' }); return redirectNotice(reply, '/admin/login', '用户名已修改，请重新登录。'); } catch (error) { return redirectNotice(reply, '/admin/profile', error.message, 'error'); } });
 app.post('/admin/profile/password', { config: { rateLimit: config.rateLimits.profile } }, async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; try { requireCsrf(request); const account = db.userById(user.id); const current = String(request.body?.currentPassword || ''); const next = String(request.body?.newPassword || ''); if (!verifyPassword(current, account.password_hash) || next.length < config.passwordMinLength || next !== String(request.body?.confirmPassword || '')) throw new Error(`当前密码错误，或新密码少于 ${config.passwordMinLength} 位、两次输入不一致。`); db.setUserPassword(user.id, hashPassword(next)); db.deleteSession(request.cookies.admin_session); db.audit(user.id, 'user.password_self', 'user', user.id, clientIp(request)); reply.clearCookie('admin_session', { path: '/admin' }); return redirectNotice(reply, '/admin/login', '密码已修改，请重新登录。'); } catch (error) { return redirectNotice(reply, '/admin/profile', error.message, 'error'); } });
 
@@ -331,7 +359,7 @@ app.get('/admin', async (request, reply) => {
   const user = await needsAdmin(request, reply); if (!user) return;
   const coupons = db.couponsWithStats().slice(0, 12);
   const stats = db.stats();
-  return reply.type('text/html').send(view.dashboard({ user, coupons, stats, redemptions: db.recentRedemptions(12), csrf: user.csrf, flash: flashFrom(request) }));
+  return reply.type('text/html').send(view.dashboard({ user, coupons, stats, redemptions: db.recentRedemptions(12), csrf: user.csrf, flash: flashFrom(request, reply) }));
 });
 
 app.get('/admin/redemptions', async (request, reply) => {
@@ -349,24 +377,24 @@ app.get('/admin/redemptions', async (request, reply) => {
   if (page > pages) { page = pages; result = db.redemptionsPaged({ ...criteria, limit: pageSize, offset: (page - 1) * pageSize }); }
   const coupons = [...db.couponsWithStats(), ...db.recycleLists().faces];
   return reply.type('text/html').send(view.redemptionsPage({
-    user, csrf: user.csrf, flash: flashFrom(request), rows: result.rows, total: result.total, page, pages, coupons,
+    user, csrf: user.csrf, flash: flashFrom(request, reply), rows: result.rows, total: result.total, page, pages, coupons,
     filters: { coupon: coupon ?? '', from: String(query.from || '').slice(0, 10), to: String(query.to || '').slice(0, 10) }
   }));
 });
 
-app.get('/admin/coupons', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; return reply.type('text/html').send(view.couponsPage({ user, coupons: db.couponsWithStats(), csrf: user.csrf, flash: flashFrom(request) })); });
-app.get('/admin/recycle', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; return reply.type('text/html').send(view.recyclePage({ user, ...db.recycleLists(), csrf: user.csrf, flash: flashFrom(request), purgeDays: db.retention().purgeDays })); });
-app.get('/admin/coupons/new', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; return reply.type('text/html').send(view.couponForm({ user, csrf: user.csrf, presets: db.activePresets(), flash: flashFrom(request) })); });
+app.get('/admin/coupons', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; return reply.type('text/html').send(view.couponsPage({ user, coupons: db.couponsWithStats(), csrf: user.csrf, flash: flashFrom(request, reply) })); });
+app.get('/admin/recycle', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; return reply.type('text/html').send(view.recyclePage({ user, ...db.recycleLists(), csrf: user.csrf, flash: flashFrom(request, reply), purgeDays: db.retention().purgeDays })); });
+app.get('/admin/coupons/new', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; return reply.type('text/html').send(view.couponForm({ user, csrf: user.csrf, presets: db.activePresets(), flash: flashFrom(request, reply) })); });
 app.post('/admin/coupons', { config: { rateLimit: config.rateLimits.adminWrite } }, async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; try { requireCsrf(request); const created = db.createCoupon(validateCoupon(request.body), user.id, clientIp(request)); return redirectNotice(reply, `/admin/coupons/${created.id}`, '优惠券已创建。'); } catch (error) { return redirectNotice(reply, '/admin/coupons/new', error.message, 'error'); } });
-app.get('/admin/coupons/:id/edit', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const coupon = db.getCoupon(Number(request.params.id)); if (!coupon || coupon.status === 'recycled') return reply.code(404).send('Not found'); return reply.type('text/html').send(view.couponForm({ user, csrf: user.csrf, coupon, presets: db.activePresets(), flash: flashFrom(request) })); });
+app.get('/admin/coupons/:id/edit', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const coupon = db.getCoupon(Number(request.params.id)); if (!coupon || coupon.status === 'recycled') return reply.code(404).send('Not found'); return reply.type('text/html').send(view.couponForm({ user, csrf: user.csrf, coupon, presets: db.activePresets(), flash: flashFrom(request, reply) })); });
 app.post('/admin/coupons/:id', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const id = Number(request.params.id); try { requireCsrf(request); if (!db.updateCoupon(id, validateCoupon(request.body), user.id, clientIp(request))) throw new Error('优惠券不存在。'); return redirectNotice(reply, `/admin/coupons/${id}`, '优惠券已更新。'); } catch (error) { return redirectNotice(reply, `/admin/coupons/${id}/edit`, error.message, 'error'); } });
-app.get('/admin/coupons/:id', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const coupon = db.getCoupon(Number(request.params.id)); if (!coupon) return reply.code(404).send('Not found'); coupon.current_state = db.couponState(coupon); return reply.type('text/html').send(view.couponDetail({ user, coupon, codes: db.codesOf(coupon.id), redemptions: db.redemptions(coupon.id), csrf: user.csrf, flash: flashFrom(request) })); });
+app.get('/admin/coupons/:id', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const coupon = db.getCoupon(Number(request.params.id)); if (!coupon) return reply.code(404).send('Not found'); coupon.current_state = db.couponState(coupon); return reply.type('text/html').send(view.couponDetail({ user, coupon, codes: db.codesOf(coupon.id), redemptions: db.redemptions(coupon.id), csrf: user.csrf, flash: flashFrom(request, reply) })); });
 app.post('/admin/coupons/:id/status', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const id = Number(request.params.id); try { requireCsrf(request); const status = readText(request.body, 'status', 20); if (!db.setCouponStatus(id, status, user.id, clientIp(request))) throw new Error('优惠券不存在。'); return status === 'recycled' ? redirectNotice(reply, '/admin/recycle', '优惠券已移入回收站，其下券码同时失效。') : redirectNotice(reply, `/admin/coupons/${id}`, '状态已更新，其下券码同步生效。'); } catch (error) { return redirectNotice(reply, `/admin/coupons/${id}`, error.message, 'error'); } });
 app.post('/admin/coupons/:id/codes', { config: { rateLimit: config.rateLimits.adminWrite } }, async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const id = Number(request.params.id); const name = readText(request.body, 'name', 80); const note = readText(request.body, 'note', 100); try { requireCsrf(request); const count = readText(request.body, 'count', 4); const total = count === '' ? 1 : Number(count); if (total > 1) { const created = db.createCodes(id, total, name, note, user.id, clientIp(request)); const first = created[0].name; const last = created[created.length - 1].name; return redirectNotice(reply, `/admin/coupons/${id}`, `已生成 ${created.length} 张券码（${first}…${last}），券码名默认隐藏。`); } const created = db.createCode(id, name, note, user.id, clientIp(request), parseShow(request.body?.show_name)); return redirectNotice(reply, `/admin/coupons/${id}`, `已创建券码「${created.name}」。`); } catch (error) { return redirectNotice(reply, `/admin/coupons/${id}`, friendlyError(error), 'error'); } });
 app.post('/admin/coupons/:id/purge', async (request, reply) => { const user = await needsAdmin(request, reply, 'super_admin'); if (!user) return; const id = Number(request.params.id); try { requireCsrf(request); const coupon = db.getCoupon(id); if (!coupon || coupon.status !== 'recycled') throw new Error('仅回收站中的优惠券可永久删除。'); db.raw.prepare('DELETE FROM coupons WHERE id=?').run(id); db.audit(user.id, 'coupon.purge', 'coupon', id, clientIp(request)); return redirectNotice(reply, '/admin/recycle', '优惠券及其全部券码、核销记录已永久删除。'); } catch (error) { return redirectNotice(reply, `/admin/coupons/${id}`, error.message, 'error'); } });
 
 // ---- 券码：真正发给客人的那一个码（ID 形如 cd-3Kd9xWm2QaP7） ----
-app.get('/admin/codes/:id', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const id = codeIdParam(request); const code = id && db.codeDetail(id); if (!code) return reply.code(404).send('Not found'); return reply.type('text/html').send(view.codeDetail({ user, code, redemptions: db.redemptionsForCode(code.id), csrf: user.csrf, flash: flashFrom(request) })); });
+app.get('/admin/codes/:id', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const id = codeIdParam(request); const code = id && db.codeDetail(id); if (!code) return reply.code(404).send('Not found'); return reply.type('text/html').send(view.codeDetail({ user, code, redemptions: db.redemptionsForCode(code.id), csrf: user.csrf, flash: flashFrom(request, reply) })); });
 // 复制链接：Token 只在这个需要登录的接口里出现，不写进任何后台 HTML。
 app.get('/admin/codes/:id/link', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const id = codeIdParam(request); const code = id && db.codeDetail(id); if (!code) return reply.code(404).send({ error: '券码不存在' }); return reply.type('application/json').send({ url: `${config.publicBaseUrl}/r/${db.getCodeToken(code.id)}` }); });
 app.post('/admin/codes/:id/name', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const id = codeIdParam(request); if (!id) return reply.code(404).send('Not found'); try { requireCsrf(request); if (!db.setCodeName(id, readText(request.body, 'name', 80), user.id, clientIp(request), parseShow(request.body?.show_name))) throw new Error('券码不存在。'); return redirectNotice(reply, `/admin/codes/${id}`, '券码名称与显示设置已保存。'); } catch (error) { return redirectNotice(reply, `/admin/codes/${id}`, error.message, 'error'); } });
@@ -388,21 +416,21 @@ app.get('/admin/codes/:id/image', { config: { rateLimit: config.rateLimits.admin
 app.get('/admin/codes/:id/qrcode', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const id = codeIdParam(request); const code = id && db.codeDetail(id); if (!code) return reply.code(404).send('Not found'); const image = await QRCode.toBuffer(`${config.publicBaseUrl}/r/${db.getCodeToken(code.id)}`, { errorCorrectionLevel: 'M', margin: 1, width: 480, color: { dark: '#101828', light: '#FFFFFFFF' } }); return reply.header('Content-Type', 'image/png').header('Cache-Control', 'no-store').send(image); });
 app.get('/admin/codes/:id/open', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const id = codeIdParam(request); const code = id && db.codeDetail(id); if (!code) return reply.code(404).send('Not found'); return reply.redirect(`${config.publicBaseUrl}/r/${db.getCodeToken(code.id)}`); });
 
-app.get('/admin/presets', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; return reply.type('text/html').send(view.presetsPage({ user, presets: db.allPresets(), csrf: user.csrf, flash: flashFrom(request) })); });
+app.get('/admin/presets', async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; return reply.type('text/html').send(view.presetsPage({ user, presets: db.allPresets(), csrf: user.csrf, flash: flashFrom(request, reply) })); });
 app.post('/admin/presets', { config: { rateLimit: config.rateLimits.adminWrite } }, async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; try { requireCsrf(request); const name = readText(request.body, 'name', 80); if (!name) throw new Error('请填写预设名称。'); const created = db.createPreset({ name, instructions: readText(request.body, 'instructions', 1000), storeText: readText(request.body, 'storeText', 500) }); db.audit(user.id, 'preset.create', 'preset', created.lastInsertRowid, clientIp(request)); return redirectNotice(reply, '/admin/presets', '预设已保存。'); } catch (error) { return redirectNotice(reply, '/admin/presets', friendlyError(error), 'error'); } });
 
 app.post('/admin/presets/:id', { config: { rateLimit: config.rateLimits.adminWrite } }, async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const id = Number(request.params.id); try { requireCsrf(request); const name = readText(request.body, 'name', 80); if (!name) throw new Error('请填写预设名称。'); const existing = db.raw.prepare('SELECT id FROM presets WHERE id=?').get(id); if (!existing) throw new Error('预设不存在。'); db.raw.prepare('UPDATE presets SET name=?,instructions=?,store_text=?,active=?,updated_at=? WHERE id=?').run(name, readText(request.body, 'instructions', 1000), readText(request.body, 'storeText', 500), request.body?.active ? 1 : 0, new Date().toISOString(), id); db.audit(user.id, 'preset.update', 'preset', id, clientIp(request)); return redirectNotice(reply, '/admin/presets', '预设已更新。'); } catch (error) { return redirectNotice(reply, '/admin/presets', friendlyError(error), 'error'); } });
 
 app.post('/admin/presets/:id/delete', { config: { rateLimit: config.rateLimits.adminWrite } }, async (request, reply) => { const user = await needsAdmin(request, reply); if (!user) return; const id = Number(request.params.id); try { requireCsrf(request); db.raw.prepare('DELETE FROM presets WHERE id=?').run(id); db.audit(user.id, 'preset.delete', 'preset', id, clientIp(request)); return redirectNotice(reply, '/admin/presets', '预设已删除。'); } catch (error) { return redirectNotice(reply, '/admin/presets', error.message, 'error'); } });
 
-app.get('/admin/users', async (request, reply) => { const user = await needsAdmin(request, reply, 'super_admin'); if (!user) return; return reply.type('text/html').send(view.usersPage({ user, users: db.users(), csrf: user.csrf, flash: flashFrom(request), passwordMin: config.passwordMinLength })); });
+app.get('/admin/users', async (request, reply) => { const user = await needsAdmin(request, reply, 'super_admin'); if (!user) return; return reply.type('text/html').send(view.usersPage({ user, users: db.users(), csrf: user.csrf, flash: flashFrom(request, reply), passwordMin: config.passwordMinLength })); });
 app.post('/admin/users', { config: { rateLimit: config.rateLimits.adminManage } }, async (request, reply) => { const user = await needsAdmin(request, reply, 'super_admin'); if (!user) return; try { requireCsrf(request); const username = readText(request.body, 'username', 50); const password = String(request.body?.password || ''); if (!/^[\w.-]{3,50}$/.test(username) || password.length < config.passwordMinLength) throw new Error(`用户名格式无效或密码少于 ${config.passwordMinLength} 位。`); const created = db.createUser(username, hashPassword(password), 'business_admin'); db.audit(user.id, 'user.create', 'user', created.lastInsertRowid, clientIp(request)); return redirectNotice(reply, '/admin/users', '业务管理员已创建。'); } catch (error) { return redirectNotice(reply, '/admin/users', friendlyError(error), 'error'); } });
 
 app.post('/admin/users/:id/active', async (request, reply) => { const user = await needsAdmin(request, reply, 'super_admin'); if (!user) return; const id = Number(request.params.id); try { requireCsrf(request); const target = db.userById(id); if (!target) throw new Error('账号不存在。'); if (target.id === user.id) throw new Error('不能停用或启用当前登录的超级管理员账号。'); if (target.role === 'super_admin') throw new Error('唯一超级管理员账号不可停用。'); const active = readText(request.body, 'active', 2) !== '0'; db.setUserActive(target.id, active); if (!active) db.deleteUserSessions(target.id); db.audit(user.id, active ? 'user.enable' : 'user.disable', 'user', target.id, clientIp(request)); return redirectNotice(reply, '/admin/users', active ? `已启用 ${target.username}。` : `已停用 ${target.username}，其全部会话已失效。`); } catch (error) { return redirectNotice(reply, '/admin/users', error.message, 'error'); } });
 
 app.post('/admin/users/:id/password', { config: { rateLimit: config.rateLimits.adminManage } }, async (request, reply) => { const user = await needsAdmin(request, reply, 'super_admin'); if (!user) return; const id = Number(request.params.id); try { requireCsrf(request); const target = db.userById(id); if (!target) throw new Error('账号不存在。'); if (target.id === user.id) throw new Error('请在“个人账号”页修改自己的密码。'); if (target.role === 'super_admin') throw new Error('超级管理员密码请在“个人账号”页修改。'); const next = String(request.body?.newPassword || ''); if (next.length < config.passwordMinLength) throw new Error(`新密码至少 ${config.passwordMinLength} 位。`); db.setUserPassword(target.id, hashPassword(next)); db.deleteUserSessions(target.id); db.audit(user.id, 'user.password_reset', 'user', target.id, clientIp(request)); return redirectNotice(reply, '/admin/users', `已重置 ${target.username} 的密码，其全部会话已失效。`); } catch (error) { return redirectNotice(reply, '/admin/users', error.message, 'error'); } });
 
-app.get('/admin/settings', async (request, reply) => { const user = await needsAdmin(request, reply, 'super_admin'); if (!user) return; const settings = Object.fromEntries(['mailEnabled','smtpHost','smtpPort','smtpSecure','smtpUser','mailFrom','mailRecipients','backupKeep','recycleDays','purgeDays','verifyHours','expiringDays','showCodeName','pngFont','pngDark'].map((key) => [key, db.getSetting(key, '')])); return reply.type('text/html').send(view.settingsPage({ user, csrf: user.csrf, settings, flash: flashFrom(request) })); });
+app.get('/admin/settings', async (request, reply) => { const user = await needsAdmin(request, reply, 'super_admin'); if (!user) return; const settings = Object.fromEntries(['mailEnabled','smtpHost','smtpPort','smtpSecure','smtpUser','mailFrom','mailRecipients','backupKeep','recycleDays','purgeDays','verifyHours','expiringDays','showCodeName','pngFont','pngDark'].map((key) => [key, db.getSetting(key, '')])); return reply.type('text/html').send(view.settingsPage({ user, csrf: user.csrf, settings, flash: flashFrom(request, reply) })); });
 app.post('/admin/settings', { config: { rateLimit: config.rateLimits.adminManage } }, async (request, reply) => { const user = await needsAdmin(request, reply, 'super_admin'); if (!user) return; try { requireCsrf(request); const plain = ['smtpHost','smtpPort','smtpSecure','smtpUser','mailFrom','mailRecipients']; for (const key of plain) db.setSetting(key, readText(request.body, key, key === 'mailRecipients' ? 2000 : 300)); db.setSetting('mailEnabled', request.body?.mailEnabled ? 'true' : 'false'); const password = String(request.body?.smtpPassword || ''); if (password) db.setSetting('smtpPassword', password, true); db.audit(user.id, 'settings.smtp_update', 'settings', 'smtp', clientIp(request)); return redirectNotice(reply, '/admin/settings', '邮件设置已保存。'); } catch (error) { return redirectNotice(reply, '/admin/settings', error.message, 'error'); } });
 app.post('/admin/settings/test-email', { config: { rateLimit: config.rateLimits.adminSensitive } }, async (request, reply) => { const user = await needsAdmin(request, reply, 'super_admin'); if (!user) return; try { requireCsrf(request); const recipient = readText(request.body, 'recipient', 320); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) throw new Error('请输入有效的收件地址。'); await sendTestMail(db, recipient); db.audit(user.id, 'settings.smtp_test', 'settings', 'smtp', clientIp(request)); return redirectNotice(reply, '/admin/settings', '测试邮件已发送。'); } catch (error) { return redirectNotice(reply, '/admin/settings', error.message, 'error'); } });
 app.post('/admin/settings/backup', { config: { rateLimit: config.rateLimits.adminManage } }, async (request, reply) => { const user = await needsAdmin(request, reply, 'super_admin'); if (!user) return; try { requireCsrf(request); const keep = Number(request.body?.backupKeep); if (!Number.isInteger(keep) || keep < 1 || keep > 365) throw new Error('备份份数应在 1–365 之间。'); db.setSetting('backupKeep', String(keep)); db.audit(user.id, 'settings.backup_update', 'settings', 'backup', clientIp(request)); return redirectNotice(reply, '/admin/settings', '备份策略已保存。'); } catch (error) { return redirectNotice(reply, '/admin/settings', error.message, 'error'); } });
@@ -426,7 +454,7 @@ app.get('/admin/audit', async (request, reply) => {
   const pages = Math.max(1, Math.ceil(result.total / pageSize));
   if (page > pages) { page = pages; result = db.auditPaged({ ...criteria, limit: pageSize, offset: (page - 1) * pageSize }); }
   return reply.type('text/html').send(view.auditPage({
-    user, csrf: user.csrf, flash: flashFrom(request), logs: result.rows, total: result.total, page, pages,
+    user, csrf: user.csrf, flash: flashFrom(request, reply), logs: result.rows, total: result.total, page, pages,
     prefixes: db.auditPrefixes(), users: db.users(),
     filters: { action: action ?? '', actor: actor ?? '', from: String(query.from || '').slice(0, 10), to: String(query.to || '').slice(0, 10) }
   }));
@@ -434,19 +462,35 @@ app.get('/admin/audit', async (request, reply) => {
 app.post('/admin/maintenance/run', { config: { rateLimit: config.rateLimits.adminSensitive } }, async (request, reply) => { const user = await needsAdmin(request, reply, 'super_admin'); if (!user) return; try { requireCsrf(request); const recycled = db.recycleEligible(); const purged = db.purgeRecycled(); db.audit(user.id, 'maintenance.run', 'system', null, clientIp(request), { recycled, purged }); return redirectNotice(reply, '/admin/settings', `清理完成：移入回收站 ${recycled} 项（券面/券码），永久清除 ${purged} 项。`); } catch (error) { return redirectNotice(reply, '/admin/settings', error.message, 'error'); } });
 
 async function runMaintenance() {
-  try { db.recycleEligible(); db.purgeRecycled(); await backupIfDue(); } catch (error) { console.error('维护任务失败：', error.message); }
+  try {
+    const recycled = db.recycleEligible();
+    const purged = db.purgeRecycled();
+    const backup = await backupIfDue();
+    logInfo('maintenance', kv({ recycled, purged, backup }));
+  } catch (error) {
+    logError('maintenance.failed', kv({ message: error.message }));
+  }
 }
 async function backupIfDue() {
   const stamp = new Intl.DateTimeFormat('en-CA', { timeZone: config.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format();
-  if (db.getSetting('lastBackupDate', '') === stamp) return;
+  if (db.getSetting('lastBackupDate', '') === stamp) return 'skip';
   mkdirSync(config.backupDir, { recursive: true });
   const target = join(config.backupDir, `qnqupon-${stamp}.db`);
   await db.raw.backup(target); db.setSetting('lastBackupDate', stamp);
   const files = readdirSync(config.backupDir).filter((f) => f.endsWith('.db')).sort().reverse();
   for (const file of files.slice(Number(db.getSetting('backupKeep', '30')) || 30)) unlinkSync(join(config.backupDir, file));
+  return `qnqupon-${stamp}.db`;
 }
 setInterval(runMaintenance, 60 * 60 * 1000).unref();
 setTimeout(runMaintenance, 5000).unref();
 
 await app.listen({ host: config.host, port: config.port });
-console.log(`QNQupon 正在监听 http://${config.host}:${config.port}`);
+logInfo('listen', kv({
+  url: `http://${config.host}:${config.port}`,
+  version: createRequire(import.meta.url)('../package.json').version,
+  data: config.databasePath,
+  tz: config.timezone,
+  level: config.logLevel
+}));
+// 启用人机验证时：提前解析并把结果缓存起来，之后每 5 分钟保温一次（登录回源不必再等出网解析）
+if (config.turnstileEnabled) startTurnstileDnsWarmup();

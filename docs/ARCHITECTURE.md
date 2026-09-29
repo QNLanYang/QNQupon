@@ -30,6 +30,8 @@
 src/
 ├─ server.js        路由、会话、CSRF、限流、安全响应头、错误处理
 ├─ config.js        环境变量（.env）
+├─ log.js           单行日志（stdout/stderr，交外置进程收集与轮转；未配置时静默）
+├─ flash.js         操作反馈（一次性 Cookie：读过即清，不把消息带进链接）
 ├─ db.js            全部 SQL（预编译语句）与数据访问
 ├─ security.js      Token/密码哈希/对称加密/确认码/随机 ID
 ├─ views.js         服务端 HTML 模板

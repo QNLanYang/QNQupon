@@ -23,10 +23,13 @@ const intEnv = (value, fallback, min, max) => {
   return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
 };
 
-// 限流规格环境变量，格式「次数/窗口」（如 10/10m = 10 分钟内最多 10 次），
-// 窗口单位支持 s/m/h/d；格式非法回退该条目的默认值。
+// 限流规格环境变量，格式「次数/窗口」（如 10/10m = 10 分钟内最多 10 次），窗口单位支持 s/m/h/d；
+// 写 off（或 0/1m 这类次数为 0）即关闭该入口的限流（返回 false，@fastify/rate-limit 会跳过该路由）；
+// 写法非法回退该条目的默认值。
 const rateEnv = (value, fallback) => {
-  const match = /^(\d+)\/(\d+)([smhd])$/.exec(String(value || '').trim());
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (raw === 'off' || /^0+\s*\//.test(raw)) return false;
+  const match = /^(\d+)\/(\d+)([smhd])$/.exec(raw);
   if (!match) return Object.freeze({ ...fallback });
   const unitMs = { s: 1000, m: 60000, h: 3600000, d: 86400000 }[match[3]];
   return Object.freeze({ max: Number(match[1]), timeWindow: Number(match[2]) * unitMs });
@@ -47,6 +50,13 @@ export const config = Object.freeze({
   turnstileSecret,
   turnstileEnabled: Boolean(turnstileSiteKey),
   sessionHours: intEnv(process.env.SESSION_HOURS, 12, 1, 720),
+  // Turnstile 回源单次超时（毫秒）：默认 5 秒；出网解析偶发慢的机器可调到 15000
+  turnstileTimeoutMs: intEnv(process.env.TURNSTILE_TIMEOUT_MS, 5000, 1000, 20000),
+  // 日志级别 debug|info|warn|error|off（写法非法回退 info）；日志走 stdout/stderr，由外置进程收集轮转
+  logLevel: (() => {
+    const value = String(process.env.LOG_LEVEL || '').trim().toLowerCase();
+    return ['debug', 'info', 'warn', 'error', 'off'].includes(value) ? value : 'info';
+  })(),
   passwordMinLength: intEnv(process.env.PASSWORD_MIN_LENGTH, 12, 8, 128),
   rateLimits: Object.freeze({
     redeemPage: rateEnv(process.env.RATE_LIMIT_REDEEM_PAGE, { max: 90, timeWindow: 60000 }),
