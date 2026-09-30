@@ -180,7 +180,9 @@ test('券面详情：创建券码表单与空状态引导', () => {
   assert.ok(!html.includes('/codes/batch'), '批量与单张是同一个表单，不另设独立入口');
   assert.match(html, /class="table-scroll"><table>/, '券码列表要限高、超出滚动');
   assert.match(html, /还没有券码/, '空状态要解释“没有券码不能发出去”');
-  assert.match(html, /次数<\/dt><dd>\d+ 次\/张/, '券面信息要写清次数口径');
+  assert.match(html, /x · 3 次\/张 · <span class="badge/, '次数口径移到标题副标题：优惠内容 · 次数/张 · 状态');
+  assert.match(html, /<dt>数量<\/dt><dd>共 \d+ \/ 可用 \d+<\/dd>/, '数量/可用省略单位，便于双列并排');
+  assert.match(html, /<dt>核销<\/dt><dd>\d+ 次<\/dd>/, '核销次数');
   assert.ok(!html.includes('/admin/coupons/7/qrcode'), '券码的二维码在券码详情里，不在券面');
 
   const appJs = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -770,7 +772,17 @@ test('手机档：顶栏折叠菜单、表格卡片化与单列表单', () => {
   assert.match(css, /\.details\{grid-template-columns:auto minmax\(0,1fr\) auto minmax\(0,1fr\);gap:8px 14px\}/, '券面/券码信息手机档双列（长字段用 .wide 独占一行）');
   assert.match(css, /\.admin-body \.panel thead\{display:none\}/, '表格手机档隐藏表头');
   assert.match(css, /\.admin-body \.panel td\[data-priority="low"\]\{display:none\}/, '次要列手机档隐藏');
-  assert.match(css, /\.admin-body \.panel td:not\(:first-child\):not\(\.row-ops\):not\(\[data-priority="low"\]\):not\(\[data-label="状态"\]\)::before\{content:attr\(data-label\)/, '非首列（状态除外）显示「标签」');
+  assert.match(css, /\.admin-body \.panel tr:not\(\.record-row\)>td:not\(:first-child\):not\(\.row-ops\):not\(\[data-priority="low"\]\):not\(\[data-label="状态"\]\)::before\{content:attr\(data-label\)/, '非首列（状态与核销记录除外）显示「标签」');
+  assert.match(css, /\.mail>svg\{width:18px;height:18px;display:none\}/, '邮件状态图标默认隐藏（桌面看文字）');
+  assert.match(css, /\.mail\.sent>svg\{color:var\(--good\)\}/, '送达=绿色信封');
+  assert.match(css, /\.mail\.failed>svg\{color:var\(--bad\)\}/, '失败=红色信封');
+  assert.match(css, /\.mail\.skipped>svg\{color:var\(--muted\)\}/, '未启用=灰色信封（带斜线）');
+  assert.match(css, /\.admin-body \.panel tr\.record-row\{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px\}/, '核销记录卡片两行布局');
+  assert.match(css, /\.admin-body \.panel \.mail-text\{display:none\}/, '手机档邮件状态只留图标');
+  const records = couponDetail({ user, csrf: 'csrf-token', flash: null, coupon: faceOf(), codes: [], redemptions: [{ redeemed_at: '2026-09-24T12:00:00.000Z', code_id: 'cd-AbCdEfGh1234', code_name: '张三的券', code_note: '张三', confirmation_code: 'HLZ-B7T', source_ip: '1.1.1.1', email_status: 'sent' }] });
+  assert.match(records, /<tr class="record-row">/, '核销记录行标记 record-row（手机档走两行布局）');
+  assert.match(records, /<span class="mail sent" title="已发送" aria-label="已发送"><svg/, '邮件状态渲染成图标，文字留给读屏与悬浮');
+  assert.match(records, /<span class="mail-text">已发送<\/span>/, '桌面仍显示中文邮件状态');
   assert.match(css, /\.admin-body \.panel td\.row-ops\{display:flex;flex-wrap:wrap/, '操作按钮在卡片底部一行');
   assert.match(css, /\.admin-body \.panel tr\.empty-row\{border:0/, '空状态不画卡片边框');
   assert.match(css, /\.admin-body \.panel td\[data-label="状态"\]\{position:absolute;right:10px;top:9px;padding:0\}/, '手机档状态徽章移到卡片右上角');
