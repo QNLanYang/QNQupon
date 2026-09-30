@@ -250,20 +250,21 @@ export function createDb(config) {
   }
 
   /** 批量创建券码：名称统一为「基名 #序号」，序号左补零到与本次数量同宽
-   *  （9 张 → #1…#9，25 张 → #01…#25，100 张 → #001…#100）；未给基名时沿用默认命名规则
-   *  （券面名、券面名 #1…）。券码名显示统一显式设为隐藏（0，管理员可单独改回）。
+   *  （9 张 → #1…#9，25 张 → #01…#25，100 张 → #001…#100）；未给基名时以券面名作基名，
+   *  同样带补零编号（不再出现「券面名、券面名 #1…」那种首个无编号的旧规则）。
+   *  券码名显示统一显式设为隐藏（0，管理员可单独改回）。
    *  整批在一个事务内完成，中途失败全部回滚。返回 [{id, token, name}]。 */
   function createCodes(couponId, count, name, note, actorId, sourceIp) {
     const face = requireEditableCoupon(couponId);
     const total = Number(String(count ?? '').trim());
     if (!Number.isInteger(total) || total < 1 || total > 100) throw new Error('批量生成数量需为 1 到 100 的整数。');
-    const base = String(name || '').trim();
+    const base = String(name || '').trim() || String(face.name || '').trim();
     const width = String(total).length; // 编号位数与数量同宽：#1…#9 / #01…#99 / #001…#100
     const created = [];
     db.exec('BEGIN');
     try {
       for (let i = 1; i <= total; i += 1) {
-        const title = base ? `${base} #${String(i).padStart(width, '0')}` : nextDefaultCodeName(couponId, face.name);
+        const title = `${base} #${String(i).padStart(width, '0')}`;
         const { id, token } = insertCode(couponId, title, note, 0, actorId);
         created.push({ id, token, name: title });
       }

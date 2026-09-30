@@ -174,6 +174,8 @@ code.expired{color:var(--muted);border-color:var(--bad)}
 .tip:hover .tip-body,.tip:focus-within .tip-body{opacity:1;visibility:visible;transform:none}
 .tip .tip-body p{margin:0 0 6px}
 .tip .tip-body p:last-child{margin-bottom:0}
+/* ❓ 气泡里提到的示例值（如 #01）用等宽字即可，不要背成页面上的胶囊样式 */
+.tip .tip-body code{background:none;border:0;padding:0;border-radius:0;color:inherit;font-size:.95em;letter-spacing:0}
 /* 被截断的取值（目前只有审计页的长 IP）：点按或悬浮弹完整值，纯 CSS 零 JS。
    只有真正被截过才套这个类，IPv4 这类放得下的保持原样、不加下划线也不弹气泡。
    触发器是 button（各平台都能点按聚焦，与面板右上角的 ❓ 同一套路），所以要把按钮外观抹平。 */

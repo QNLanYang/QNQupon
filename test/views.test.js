@@ -177,6 +177,7 @@ test('券面详情：创建券码表单与空状态引导', () => {
   assert.match(html, /<div class="head-actions"><div class="popover-wrap"><button type="button" class="primary" data-popover-toggle aria-expanded="false" aria-controls="code-create">新建<\/button><div class="popover" id="code-create" hidden><form id="code-create-form"/, '创建券码收进「券码」卡片右上角的「新建」浮窗，默认收起');
   assert.match(html, /<div class="actions"><button class="primary" id="code-submit" type="submit">创建券码<\/button><\/div>/, '提交按钮在表单内，保留 id 供批量文案切换');
   assert.ok(!html.includes('id="create-code"'), '不再单独占一个「创建券码」面板');
+  assert.match(html, /名称留空则以券面名作基名，编号同样按数量补零/, '留空名称时以券面名作基名，编号同样补零（不再是首个裸券面名）');
   assert.match(html, /位数与数量同宽，如 25 张 → <code>#01<\/code>…#25/, '批量编号规则收进 ❓ 说明');
   assert.match(html, /券码名默认不显示/, '批量生成的券码名默认隐藏');
   assert.match(html, /class="tip"><button type="button" aria-label="本面板说明">\?<\/button>/, '面板说明收进右上角 ❓（纯 CSS 气泡）');
@@ -893,6 +894,7 @@ test('细节修正：登录卡片宽度、页脚单行、面板不出内部滚�
   assert.match(css, /\.admin-body \.panel tr\.audit-row>td:first-child\{flex:1 1 100%;color:var\(--muted\)/, '时间占满第一行（basis 100% 才能把句子挤到第二行），右侧空位让给来源 IP');
   assert.match(css, /\.admin-body \.panel tr\.record-row>td\[data-label="券面"\],[\s\S]{0,140}\{order:3;flex:1 1 100%;display:flex;align-items:baseline/, '核销卡片的券面/券码各自整行占位：位置不受名字长短与备注有无影响');
   assert.ok(!css.includes('.rec-lbl'), '卡片里不写死字段标签，说明改由右上角 ❓ 承担');
+  assert.match(css, /\.tip \.tip-body code\{background:none;border:0;padding:0/, '❓ 里的示例值（如 #01）不再背成页面胶囊样式');
   assert.match(css, /code\.expired\{color:var\(--muted\);border-color:var\(--bad\)\}/, '过期确认码：字变灰、外框描红');
   assert.match(app, /setFlag\(navShell, 'data-fade-right', scrollable && topNav\.scrollLeft \+ topNav\.clientWidth < topNav\.scrollWidth - 1\)/, 'app.js 按滚动位置切换提示，标记挂在外层（好让 CSS 用后代选择器过渡）');
   assert.match(app, /topNav\.scrollBy\(\{ left: direction \* Math\.round\(topNav\.clientWidth \* 0\.6\), behavior: 'smooth' \}\)/, '点两侧小三角往对应方向滚一屏的六成（原来是纯装饰，点击会穿透到被盖住的导航项）');

@@ -123,6 +123,10 @@ test('批量生成券码：编号位数与数量同宽、统一默认隐藏券�
   assert.ok(nine.every((c) => db.codeDetail(c.id).show_name === 0), '批量生成的券码名统一显式设为「始终隐藏」');
   assert.ok(nine.every((c) => db.codeDetail(c.id).note === '城南店员工'), '同一批共用备注');
 
+  const twenty = db.createCodes(face.id, 20, '批量二十', null, actor);
+  assert.equal(twenty[0].name, '批量二十 #01', '20 张 → 从 #01 起');
+  assert.equal(twenty[19].name, '批量二十 #20', '20 张 → 到 #20 止（2 位编号）');
+
   const twentyFive = db.createCodes(face.id, 25, '夏季活动', null, actor);
   assert.equal(twentyFive[0].name, '夏季活动 #01');
   assert.equal(twentyFive[24].name, '夏季活动 #25', '25 张 → 2 位编号');
@@ -131,9 +135,9 @@ test('批量生成券码：编号位数与数量同宽、统一默认隐藏券�
   assert.equal(hundred[0].name, '年卡 #001');
   assert.equal(hundred[99].name, '年卡 #100', '100 张 → 3 位编号');
 
-  // 未给名称：沿用「券面名、券面名 #1…」自动命名，不追加补零编号
+  // 未给名称：以券面名作基名，同样带补零编号（首个不再是裸券面名）
   const base = db.getCoupon(face.id).name;
-  assert.deepEqual(db.createCodes(face.id, 2, '   ', null, actor).map((c) => c.name), [base, `${base} #1`]);
+  assert.deepEqual(db.createCodes(face.id, 2, '   ', null, actor).map((c) => c.name), [`${base} #1`, `${base} #2`], '留空名称时以券面名作基名并按数量补零');
 
   // 数量越界、非法输入与回收站券面：一律不落库
   assert.throws(() => db.createCodes(face.id, 0, 'x', null, actor), /1 到 100/);

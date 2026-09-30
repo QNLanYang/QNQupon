@@ -299,7 +299,7 @@ export function couponDetail({ user, coupon, codes, redemptions, csrf, flash, ve
     : `<div class="danger-row">${restore}${purge}</div>`;
 
   // 创建券码做成「券码」卡片标题行右侧的「新建」：平时不占版面，点开才是浮窗里的表单
-  const createHelp = canEdit ? panelHelp('每张券码有独立链接与二维码，次数与有效期跟随券面。', '数量 &gt; 1 为批量：名称自动加编号（位数与数量同宽，如 25 张 → <code>#01</code>…#25），券码名默认不显示。', '名称留空则自动命名「券面名、券面名 #1…」；名称仅作展示，可重复。') : '';
+  const createHelp = canEdit ? panelHelp('每张券码有独立链接与二维码，次数与有效期跟随券面。', '数量 &gt; 1 为批量：名称自动加编号（位数与数量同宽，如 25 张 → <code>#01</code>…#25），券码名默认不显示。', '名称留空则以券面名作基名，编号同样按数量补零；名称仅作展示，可重复。') : '';
   const createButton = canEdit ? `<div class="popover-wrap"><button type="button" class="primary" data-popover-toggle aria-expanded="false" aria-controls="code-create">新建</button><div class="popover" id="code-create" hidden><form id="code-create-form" method="post" action="/admin/coupons/${coupon.id}/codes" class="popover-form"><input type="hidden" name="_csrf" value="${attr(csrf)}"><label>券码名称<input name="name" maxlength="80" placeholder="例如：张三的券；留空自动命名"></label><label>备注<input name="note" maxlength="100" placeholder="发给谁，仅后台可见"></label><label>券码名显示<select name="show_name" id="code-show-name"><option value="">跟随全局设置</option><option value="1">始终显示</option><option value="0">始终隐藏</option></select></label><label>生成数量<input name="count" id="code-count" type="number" min="1" max="100" step="1" value="1"></label><div class="actions"><button class="primary" id="code-submit" type="submit">创建券码</button></div></form></div></div>` : '';
 
   const codeRows = codes.map((code) => {
