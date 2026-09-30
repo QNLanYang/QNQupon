@@ -1,37 +1,52 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 QNLanYang (全能岚漾)
-// 主题三态：跟随系统（默认，html 无 data-theme）/ 浅色 / 深色。localStorage 持久化。
+// 主题：未主动选择过 = 跟随系统（不写 data-theme，交回 prefers-color-scheme）；主动选择过 = 记住浅色/深色。
+// 切换入口是单个图标按钮（[data-theme-cycle]）：点一下在浅色/深色之间换，不做下拉、不摆多个按钮。
+// 只认「主动选过」的两种值，"system" 是旧实现的遗留写法，按未选择处理。
 // 同步加载于 <head>，在首次渲染前把 data-theme 落到 html 上，避免主题闪烁。
 (function () {
   var KEY = 'qnqupon-theme';
-  var VALID = { system: 1, light: 1, dark: 1 };
+  var CHOSEN = { light: 1, dark: 1 };
+  var LABEL = { light: '浅色', dark: '深色' };
+  var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
-  function read() {
+  function chosen() {
     try {
       var v = localStorage.getItem(KEY);
-      return VALID[v] ? v : 'system';
-    } catch (e) { return 'system'; }
+      return CHOSEN[v] ? v : null;
+    } catch (e) { return null; }
   }
+
+  function systemTheme() { return mq && mq.matches ? 'dark' : 'light'; }
+  function effective() { return chosen() || systemTheme(); }
 
   function apply(v) {
     var el = document.documentElement;
-    if (v === 'system') el.removeAttribute('data-theme');
-    else el.setAttribute('data-theme', v);
-    var bs = document.querySelectorAll('[data-theme-set]');
+    if (v) el.setAttribute('data-theme', v);
+    else el.removeAttribute('data-theme');
+    // 图标显形由 CSS 按 data-theme + prefers-color-scheme 决定，这里只同步无障碍文案
+    var label = (chosen() ? '主题：' + LABEL[effective()] : '主题：跟随系统（' + LABEL[effective()] + '）') + '（点击切换）';
+    var bs = document.querySelectorAll('[data-theme-cycle]');
     for (var i = 0; i < bs.length; i++) {
-      bs[i].setAttribute('aria-pressed', bs[i].getAttribute('data-theme-set') === v ? 'true' : 'false');
+      bs[i].setAttribute('aria-label', label);
+      bs[i].setAttribute('title', label);
     }
   }
 
-  // head 时点：html 属性立即生效（防闪烁）；按钮态等 DOM 就绪后再刷。
-  apply(read());
-  document.addEventListener('DOMContentLoaded', function () { apply(read()); });
+  // head 时点：html 属性立即生效（防闪烁）；按钮文案等 DOM 就绪后再刷。
+  apply(chosen());
+  document.addEventListener('DOMContentLoaded', function () { apply(chosen()); });
+  // 未主动选择时跟随系统：系统主题变了要同步文案（外观本身由媒体查询负责）
+  if (mq) {
+    var onSystem = function () { if (!chosen()) apply(null); };
+    if (mq.addEventListener) mq.addEventListener('change', onSystem);
+    else if (mq.addListener) mq.addListener(onSystem);
+  }
   document.addEventListener('click', function (e) {
     var t = e.target;
-    if (!t || !t.getAttribute) return;
-    var v = t.getAttribute('data-theme-set');
-    if (!v || !VALID[v]) return;
-    try { localStorage.setItem(KEY, v); } catch (err) { /* 隐私模式下内存态仍生效 */ }
-    apply(v);
+    if (!t || !t.closest || !t.closest('[data-theme-cycle]')) return;
+    var next = effective() === 'light' ? 'dark' : 'light';
+    try { localStorage.setItem(KEY, next); } catch (err) { /* 隐私模式下内存态仍生效 */ }
+    apply(next);
   });
 })();

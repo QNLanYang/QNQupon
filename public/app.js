@@ -190,6 +190,23 @@ function restoreFields(snapshot, submittedAction) {
   }
 }
 
+// 局部替换 <main>：页脚（含主题开关）就在 main 内部，服务端每次渲染的都是默认高亮，
+// 直接换掉会把用户选好的主题重置成「跟随系统」——所以保留当前页脚节点、只换内容。
+// 反馈卡片相反：它是本次操作的新消息，必须换新的。
+function swapMain(next) {
+  const nextMain = next.querySelector('main.container');
+  const currentMain = document.querySelector('main.container');
+  if (!nextMain || !currentMain) return false;
+  const footer = currentMain.querySelector('.site-footer');
+  nextMain.querySelector('.site-footer')?.remove();
+  if (footer) nextMain.appendChild(footer);
+  const nextHost = next.querySelector('[data-toast-host]');
+  if (nextHost) document.querySelector('[data-toast-host]')?.replaceWith(nextHost);
+  currentMain.replaceWith(nextMain);
+  document.title = next.title;
+  return true;
+}
+
 document.addEventListener('submit', async (event) => {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
@@ -214,15 +231,8 @@ document.addEventListener('submit', async (event) => {
     const type = response.headers.get('content-type') || '';
     if (!response.ok || !type.includes('text/html')) throw new Error('fallback');
     const next = new DOMParser().parseFromString(await response.text(), 'text/html');
-    const nextMain = next.querySelector('main.container');
-    const currentMain = document.querySelector('main.container');
-    if (!nextMain || !currentMain) throw new Error('fallback');
-
     const scrollY = window.scrollY;
-    currentMain.replaceWith(nextMain);
-    const nextHost = next.querySelector('[data-toast-host]');
-    if (nextHost) document.querySelector('[data-toast-host]')?.replaceWith(nextHost);
-    document.title = next.title;
+    if (!swapMain(next)) throw new Error('fallback');
     if (response.url && response.url !== location.href) history.replaceState({}, '', response.url);
     placeToasts();
     armAllToasts();
@@ -254,4 +264,33 @@ document.addEventListener('click', async (event) => {
   }
   button.disabled = false;
   setTimeout(() => { button.textContent = original; }, 2000);
+});
+
+// ---- 「刷新」局部更新（仅后台页）：重取当前地址、只换 <main> 与反馈卡片，保持滚动位置与未提交的输入 ----
+document.addEventListener('click', async (event) => {
+  const link = event.target.closest('[data-refresh]');
+  if (!link || event.defaultPrevented) return;
+  if (!document.body.classList.contains('admin-body')) return;
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; // 交回浏览器（新标签等）
+  const url = link.getAttribute('href');
+  if (!url || link.classList.contains('is-busy')) return;
+  event.preventDefault();
+  link.classList.add('is-busy');
+  try {
+    const response = await fetch(url, { headers: { accept: 'text/html' }, credentials: 'same-origin' });
+    const type = response.headers.get('content-type') || '';
+    if (!response.ok || !type.includes('text/html')) throw new Error('fallback');
+    const next = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const snapshot = collectFields();
+    const scrollY = window.scrollY;
+    if (!swapMain(next)) throw new Error('fallback');
+    placeToasts();
+    armAllToasts();
+    restoreFields(snapshot, '\u0000refresh'); // 刷新不是提交：页面上已输入但未提交的内容原样保留
+    window.scrollTo(0, scrollY);
+  } catch {
+    location.href = url;
+  } finally {
+    link.classList.remove('is-busy');
+  }
 });

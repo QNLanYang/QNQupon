@@ -13,7 +13,7 @@
 
 import 'dotenv/config';
 import { configureLog } from '../src/log.js';
-import { verifyTurnstile } from '../src/security.js';
+import { verifyTurnstile, warmTurnstileDns } from '../src/security.js';
 
 // Cloudflare 官方测试密钥：恒过 / 恒失败（仅用于联调与自检）
 const PASS_SECRET = '1x0000000000000000000000000000000AA';
@@ -24,6 +24,10 @@ const arg = process.argv.slice(2).find((value) => value.startsWith('--secret='))
 const ownSecret = (arg ? arg.slice('--secret='.length) : process.env.TURNSTILE_SECRET || '').trim();
 
 configureLog({ level: process.env.LOG_LEVEL || 'debug', timeZone: 'Asia/Shanghai' });
+
+// 先预热解析缓存（服务器启动就会做这件事），让第 1 次回源就命中「缓存 + 新建连接」这条真实路径：
+// 不预热的话首次请求走的是系统解析回落，加上 keepAlive 复用，反而测不到生产里的分支。
+await warmTurnstileDns();
 
 async function check(label, secret) {
   const startedAt = Date.now();

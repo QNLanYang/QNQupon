@@ -126,12 +126,23 @@ export function createIpCache({ host, resolve = resolve4, ttlMs = 10 * 60 * 1000
 
 const turnstileIps = createIpCache({ host: TURNSTILE_HOST });
 
-// net 的 lookup：命中缓存立刻返回 IPv4；未命中回落系统解析（只取 IPv4，避免 IPv6 优先的额外等待）
-const turnstileLookup = (hostname, options, callback) => {
-  const ips = turnstileIps.get();
-  if (hostname === TURNSTILE_HOST && ips.length) return callback(null, ips[0], 4);
-  return dnsLookup(hostname, { ...options, family: 4 }, callback);
-};
+// net 的 lookup：命中缓存立刻返回 IPv4；未命中回落系统解析（只取 IPv4，避免 IPv6 优先的额外等待）。
+// Node 18+ 的 Agent 会带 all:true 调 lookup（autoSelectFamily / happy eyeballs），这时必须回「数组」；
+// 只回 (err, address, family) 的三参形态会被 Node 当成数组去取 .address，直接报 Invalid IP address: undefined，
+// 回源整条断掉（缓存预热后每个新连接都会触发）。
+export function createIpLookup({ cache, host, lookup = dnsLookup }) {
+  return (hostname, options, callback) => {
+    const ips = cache.get();
+    if (hostname === host && ips.length) {
+      return options && options.all
+        ? callback(null, ips.map((address) => ({ address, family: 4 })))
+        : callback(null, ips[0], 4);
+    }
+    return lookup(hostname, { ...options, family: 4 }, callback);
+  };
+}
+
+const turnstileLookup = createIpLookup({ cache: turnstileIps, host: TURNSTILE_HOST });
 
 const turnstileAgent = new Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSockets: 2, lookup: turnstileLookup });
 

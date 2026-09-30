@@ -138,18 +138,21 @@ test('预设页每条都有编辑/删除动作', () => {
   // 停用预设不应出现在券表单的下拉里（由 activePresets 控制）
 });
 
-test('券面详情：可编辑时有停用/回收，回收站只有恢复+永久删除', () => {
+test('券面详情：可编辑时有停用/删除，回收站只有恢复+永久删除', () => {
   const active = couponDetail({ user, coupon: faceOf(), codes: [codeOf(), codeOf({ id: 'cd-Zz9Yy8Xx7Ww6', name: '停用的码', note: null, status: 'disabled', current_state: 'disabled' })], redemptions: [], csrf: 'csrf-token', flash: null });
-  assert.match(active, /移入回收站/);
+  assert.match(active, /class="danger">删除<\/button>/);
   assert.match(active, />停用整张券</);
+  assert.match(active, /name="return" value="\/admin\/coupons\/7"/, '状态操作送回原页，不再跳转');
   assert.match(active, /券码（2）/, '要列出该券面下的券码');
   assert.match(active, /停用<\/button>/, '单张券码可单独停用');
   assert.ok(!active.includes('从回收站恢复'));
+  assert.ok(!active.includes('>详情</a>'), '券码名可点进详情，行内不再重复放「详情」按钮');
+  assert.match(active, /href="\/admin\/codes\/cd-AbCdEfGh1234\/open"[^>]*>核销页<\/a>/, '券码行点「核销页」直接跳客人核销页');
 
   const recycled = couponDetail({ user, coupon: faceOf({ status: 'recycled', current_state: 'recycled' }), codes: [], redemptions: [], csrf: 'csrf-token', flash: null });
   assert.match(recycled, /从回收站恢复/);
   assert.match(recycled, /action="\/admin\/coupons\/7\/purge"/);
-  assert.ok(!recycled.includes('>移入回收站<'), '回收站内不应再显示移入按钮');
+  assert.ok(!recycled.includes('>删除<'), '回收站内不应再显示删除按钮');
   assert.ok(!recycled.includes('编辑券面'), '回收站内不应可编辑');
   assert.ok(!recycled.includes('/codes"'), '回收站内不应再创建券码');
 
@@ -169,7 +172,7 @@ test('券面详情：创建券码表单与空状态引导', () => {
   assert.match(html, /name="show_name"[\s\S]{0,160}跟随全局设置[\s\S]{0,120}始终显示[\s\S]{0,120}始终隐藏/, '创建时可选券码名显示覆写');
   assert.match(html, /name="note"/, '创建时可填发给谁的备注');
   assert.match(html, /name="count" id="code-count" type="number" min="1" max="100"/, '创建表单带生成数量（数量 1 = 单张，>1 = 批量）');
-  assert.match(html, /value="1">[\s\S]{0,80}<button class="primary" id="code-submit"/, '数量默认 1，且与单张创建共用同一个按钮');
+  assert.match(html, /class="head-actions"><button class="primary" id="code-submit" type="submit" form="code-create-form">创建券码<\/button><\/div><\/div><form id="code-create-form"/, '创建按钮移到面板标题行右侧，用 form 属性关联表单');
   assert.match(html, /位数与数量同宽，如 25 张 → <code>#01<\/code>…#25/, '批量编号规则收进 ❓ 说明');
   assert.match(html, /券码名默认不显示/, '批量生成的券码名默认隐藏');
   assert.match(html, /class="tip"><button type="button" aria-label="本面板说明">\?<\/button>/, '面板说明收进右上角 ❓（纯 CSS 气泡）');
@@ -191,7 +194,7 @@ test('券码详情：二维码、复制链接、PNG 与单独状态操作', () =
   const html = codeDetail({ user, code: codeOf(), redemptions: [
     { redeemed_at: '2026-09-24T12:00:00.000Z', confirmation_code: 'ABC-DEF', source_ip: '1.1.1.1', user_agent: 'agent/1.0', email_status: 'sent' }
   ], csrf: 'csrf-token', flash: null });
-  assert.match(html, /href="\/admin\/coupons\/7">← 返回优惠券/, '要能返回所属券面');
+  assert.match(html, /class="back-arrow" href="\/admin\/coupons\/7"/, '要能返回所属券面');
   assert.match(html, /<h1>张三的券<\/h1>/, '标题用券码名称');
   assert.match(html, /<code>cd-AbCdEfGh1234<\/code>/, '页面要显示券码 ID');
   assert.match(html, /<dt>券码名显示<\/dt><dd>跟随全局设置<\/dd>/, '默认展示跟随全局');
@@ -200,12 +203,13 @@ test('券码详情：二维码、复制链接、PNG 与单独状态操作', () =
   assert.match(hiddenCode, /<dt>券码名显示<\/dt><dd>始终隐藏<\/dd>/);
   assert.match(hiddenCode, /value="0" selected>始终隐藏/);
   assert.match(html, /src="\/admin\/codes\/cd-AbCdEfGh1234\/qrcode"/, '二维码按券码生成');
-  assert.match(html, /data-copy-link="\/admin\/codes\/cd-AbCdEfGh1234\/link"/, '复制链接走接口，不把 Token 写进 HTML');
+  assert.ok(!html.includes('data-copy-link'), '券码详情已移除「复制核销链接」按钮，且不把 Token 写进 HTML');
   assert.match(html, /href="\/admin\/codes\/cd-AbCdEfGh1234\/open"/);
-  assert.match(html, /href="\/admin\/codes\/cd-AbCdEfGh1234\/image"[^>]*>下载券面 PNG/);
-  assert.match(html, /href="\/admin\/codes\/cd-AbCdEfGh1234\/image\?inline=1"[^>]*>预览券面 PNG/, '预览按钮新标签页内联打开');
-  assert.match(html, />停用这张券码</, '可单独停用');
-  assert.match(html, /移入回收站/);
+  assert.match(html, /href="\/admin\/codes\/cd-AbCdEfGh1234\/image"[^>]*>下载优惠券/);
+  assert.match(html, /href="\/admin\/codes\/cd-AbCdEfGh1234\/image\?inline=1"[^>]*>预览优惠券/, '预览按钮新标签页内联打开');
+  assert.match(html, />停用<\/button>/, '可单独停用（文案精简）');
+  assert.match(html, /class="danger">删除<\/button>/);
+  assert.match(html, /name="return" value="\/admin\/codes\/cd-AbCdEfGh1234"/, '状态操作送回原页，不再跳转');
   assert.match(html, /action="\/admin\/codes\/cd-AbCdEfGh1234\/name"/, '可改券码名称');
   assert.match(html, /action="\/admin\/codes\/cd-AbCdEfGh1234\/note"/, '可单独改备注');
   assert.match(html, /已核销<\/dt><dd>1 \/ 3 次（剩余 2 次）/);
@@ -312,13 +316,13 @@ test('列表与概览：合并日期列、无更新时间列、券码统计列',
 
 test('券详情有返回、刷新与券码列表', () => {
   const html = couponDetail({ user, csrf: 'csrf-token', flash: null, redemptions: [], codes: [], coupon: faceOf() });
-  assert.match(html, /class="back" href="\/admin\/coupons">← 返回优惠券列表/);
-  assert.match(html, /href="\/admin\/coupons\/7">刷新</);
-  assert.match(html, /href="\/admin\/coupons\/7\/edit"/, '可编辑券面');
+  assert.match(html, /class="back-arrow" href="\/admin\/coupons" aria-label="返回优惠券列表"/, '返回是标题左侧的箭头');
+  assert.match(html, /href="\/admin\/coupons\/7" data-refresh>刷新</);
+  assert.match(html, /<div class="panel-head"><h2>券面信息<\/h2>[\s\S]*?<a class="secondary button" href="\/admin\/coupons\/7\/edit">编辑券面<\/a>/, '「编辑券面」放在券面信息卡片标题行');
   assert.ok(!html.includes('/r/'), '后台页面不应直接暴露 Token 链接');
 
   const recycled = couponDetail({ user, csrf: 'csrf-token', flash: null, redemptions: [], codes: [], coupon: faceOf({ status: 'recycled', current_state: 'recycled' }) });
-  assert.match(recycled, /class="back" href="\/admin\/recycle">← 返回回收站/, '回收站内的券返回回收站');
+  assert.match(recycled, /class="back-arrow" href="\/admin\/recycle" aria-label="返回回收站"/, '回收站内的券返回回收站');
 });
 
 test('回收站页：券面与券码两栏、恢复入口与导航', () => {
@@ -327,12 +331,13 @@ test('回收站页：券面与券码两栏、恢复入口与导航', () => {
   ], codes: [
     { id: 'cd-Qq1Ww2Ee3Rr4', face_id: 3, name: '李四的码', face_name: '旧券', offer_text: 'x', note: '李四', used_count: 1, max_uses: 2, starts_on: null, expires_on: null, recycled_at: '2026-09-24T12:00:00.000Z', current_state: 'recycled' }
   ] });
-  assert.match(html, /← 返回优惠券列表/);
+  assert.match(html, /class="back-arrow" href="\/admin\/coupons"/);
   assert.match(html, /优惠券（券面）/);
   assert.match(html, /<h2>券码<\/h2>/, '券码单独一栏');
   assert.match(html, /action="\/admin\/coupons\/3\/status"/);
   assert.match(html, /action="\/admin\/codes\/cd-Qq1Ww2Ee3Rr4\/status"/, '券码也要能恢复');
   assert.match(html, /name="status" value="active"/);
+  assert.ok(!html.includes('>详情</a>'), '券面/券码名可点进详情，行内不再重复放「详情」按钮');
   assert.match(html, /2026-09-24 20:00/, '移入时间按北京时间显示（UTC+8）');
   assert.match(html, /李四/, '券码要显示备注便于认领');
   assert.ok(!html.includes('/purge'), '永久删除不放在回收站列表，保留在详情页勾选确认');
@@ -345,9 +350,10 @@ test('回收站页：券面与券码两栏、恢复入口与导航', () => {
   assert.match(empty, /没有回收的优惠券/);
   assert.match(empty, /没有回收的券码/);
 
-  // 导航：两种角色都能看到回收站入口，业务管理员看不到账号/设置
+  // 导航：顶栏不再有回收站入口（改由优惠券页与概览进入），业务管理员看不到账号/设置
   const biz = recyclePage({ user: { ...user, role: 'business_admin' }, csrf: 'csrf-token', flash: null, faces: [], codes: [] });
-  assert.match(biz, /href="\/admin\/recycle"/);
+  assert.ok(!biz.includes('href="/admin/recycle">回收站<'), '顶栏不再放回收站入口');
+  assert.match(biz, /href="\/admin\/recycle" data-refresh>刷新</, '回收站页自己的刷新按钮仍在');
   assert.match(biz, /href="\/admin\/redemptions">核销记录/, '核销记录入口对业务管理员也开放');
   assert.ok(!biz.includes('href="/admin/users"'), '业务管理员不应看到账号入口');
 });
@@ -373,7 +379,7 @@ test('优惠券列表与概览带回收站入口', () => {
 
 test('创建/编辑页有返回按钮与日期留空提示', () => {
   const create = couponForm({ user, csrf: 'csrf-token', coupon: null, presets: [], flash: null });
-  assert.match(create, /class="back" href="\/admin\/coupons">← 返回优惠券列表/);
+  assert.match(create, /class="back-arrow" href="\/admin\/coupons"/);
   assert.match(create, /name="startsOn" type="date"/, '日期交还原生 date 控件');
   assert.match(create, /开始日期<small>（留空 = 即刻生效）<\/small>/);
   assert.match(create, /截止日期<small>（留空 = 长期有效）<\/small>/);
@@ -383,7 +389,7 @@ test('创建/编辑页有返回按钮与日期留空提示', () => {
   const edit = couponForm({ user, csrf: 'csrf-token', presets: [], flash: null, coupon: {
     id: 9, name: '券', offer_text: 'x', max_uses: 1, used_count: 0, starts_on: '2026-09-01', expires_on: ''
   } });
-  assert.match(edit, /class="back" href="\/admin\/coupons\/9">← 返回详情/);
+  assert.match(edit, /class="back-arrow" href="\/admin\/coupons\/9"/);
   assert.match(edit, /value="2026-09-01"/);
 });
 
@@ -396,7 +402,7 @@ test('日期输入：脚本零接管，全平台原生 date', () => {
 
 test('个人账号页有返回概览', () => {
   const html = profilePage({ user, csrf: 'csrf-token', flash: null });
-  assert.match(html, /class="back" href="\/admin">← 返回概览/);
+  assert.match(html, /class="back-arrow" href="\/admin"/);
 });
 
 test('状态配色：可核销绿 / 用尽与过期黄 / 未启用蓝 / 禁用红 / 回收站灰', () => {
@@ -413,7 +419,7 @@ test('状态配色：可核销绿 / 用尽与过期黄 / 未启用蓝 / 禁用�
   assert.match(css, /\.table-scroll td:nth-child\(3\)\{white-space:nowrap\}/, '已用列不折行');
   assert.match(css, /\.badge\{white-space:nowrap\}/, '状态徽标不折行');
   assert.match(css, /\.detail-grid\{display:grid;grid-template-columns:minmax\(0,2fr\) minmax\(0,3fr\)/, '券面信息用窄列、券码列表用宽列');
-  assert.match(css, /\.admin-body \.container>\*\+\*:not\(\.site-footer\)\{margin-top:22px\}/, '后台页顶层模块（.panel / .detail-grid）之间保留 22px 纵向间距，页脚不受影响');
+  assert.match(css, /\.admin-body \.container\{row-gap:22px\}/, '后台页顶层模块之间 22px 纵向间距（由容器 row-gap 承担）');
 });
 
 test('面板说明入口：纯 CSS 气泡，零脚本', () => {
@@ -465,7 +471,7 @@ test('三态主题：浅色变量中枢 + 深色双入口', () => {
   const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
   // 浅色中枢：规则只从 var() 取色，浅色字面值集中在 :root
   assert.match(css, /:root\{color-scheme:light;--ink:#172033/, '浅色值与 color-scheme:light 定义于 :root');
-  assert.match(css, /body\{margin:0;background:var\(--page-bg\)/, '页面底走变量');
+  assert.match(css, /body\{margin:0;min-height:100vh;display:flex;flex-direction:column;background:var\(--page-bg\)/, '页面底走变量，且为整屏弹性列');
   assert.match(css, /background:var\(--badge-valid-bg\)/, '徽章底走变量');
   assert.match(css, /\.landing-body\{--accent-deep:#c1403c;background:var\(--landing-grad\)/, '落地页渐变走变量');
   // 深色双入口：显式选择 与 系统偏好（未被强制浅色）
@@ -480,19 +486,53 @@ test('三态主题：浅色变量中枢 + 深色双入口', () => {
   assert.match(css, /--dk-good:#35c48f/, '语义色在深色下整体提亮');
 });
 
-test('主题开关：页脚三态按钮 + theme.js 前置加载', () => {
+test('主题开关：单图标浅色/深色切换、页脚贴底与 theme.js 前置加载', () => {
+  // 后台顶栏：主题图标在用户名左边，退出也改成图标
+  const adminHtml = dashboard({ user, csrf: 'csrf-token', flash: null, coupons: [], stats: { valid: 0, used: 0, expiring: 0, recycled: 0 } });
+  assert.match(adminHtml, /data-theme-cycle/, '顶栏有切换按钮');
+  assert.match(adminHtml, /class="ico ico-light"/, '太阳=浅色');
+  assert.match(adminHtml, /class="ico ico-dark"/, '月亮=深色');
+  assert.ok(!adminHtml.includes('ico-system'), '不存在「跟随系统」的第三种图标');
+  assert.ok(adminHtml.indexOf('data-theme-cycle') < adminHtml.indexOf('class="who"'), '主题图标在用户名左边');
+  assert.match(adminHtml, /<button class="icon-button logout" aria-label="退出登录" title="退出登录">/, '退出改为图标 + 无障碍文案');
+  assert.ok(!adminHtml.includes('link-button'), '不再有「退出」文字按钮');
+  assert.ok(!adminHtml.includes('data-theme-set') && !adminHtml.includes('theme-switch'), '不再摆多个主题按钮');
+
+  // 主页：首屏「GitHub 源码仓库」左边有切换按钮
+  const landing = home();
+  assert.match(landing, /<p class="actions hero-actions"><button type="button" class="icon-button theme-toggle" data-theme-cycle[\s\S]*?<a class="primary button"/, '主页首屏源码按钮左边是主题切换');
+  assert.ok(!landing.includes('theme-switch'), '页脚按钮组已移除');
+
+  // 登录页/查询页/客人页不再提供切换，默认跟随系统
+  for (const [name, html] of [['登录页', login('csrf-token')], ['查询页', verifyPage({})], ['客人页', publicCoupon(null, '')]]) {
+    assert.ok(!html.includes('data-theme-cycle') && !html.includes('data-theme-set'), `${name}不提供主题切换`);
+  }
+
   const html = login('csrf-token');
   assert.match(html, /<script src="\/assets\/theme\.js"><\/script>/, 'theme.js 同步加载');
   assert.ok(html.indexOf('/assets/theme.js') < html.indexOf('</head>'), '位于 head 内，渲染前落 data-theme 防闪烁');
-  assert.match(html, /data-theme-set="system" aria-pressed="true"/, '默认跟随系统为按下态');
-  assert.match(html, /data-theme-set="light"/, '浅色按钮');
-  assert.match(html, /data-theme-set="dark"/, '深色按钮');
-  assert.ok(html.indexOf('theme-switch') < html.indexOf('</footer>'), '开关在页脚内');
+
   const js = readFileSync(new URL('../public/theme.js', import.meta.url), 'utf8');
   assert.match(js, /qnqupon-theme/, 'localStorage 键');
-  assert.match(js, /removeAttribute\('data-theme'\)/, '跟随系统即移除属性，交回媒体查询');
-  assert.ok(js.includes("localStorage.setItem(KEY, v)"), '选择写入 localStorage 持久化');
-  assert.ok(js.includes("VALID[v] ? v : 'system'"), '只接受三态合法值，异常回退跟随系统');
+  assert.match(js, /removeAttribute\('data-theme'\)/, '未选择过即移除属性，交回媒体查询（跟随系统）');
+  assert.ok(js.includes("localStorage.setItem(KEY, next)"), '选择写入 localStorage 持久化');
+  assert.ok(js.includes("CHOSEN[v] ? v : null"), '只认主动选过的浅色/深色，其余（含旧的 system）按未选择处理');
+  assert.match(js, /effective\(\) === 'light' \? 'dark' : 'light'/, '点击在浅色/深色之间切换');
+  assert.match(js, /prefers-color-scheme: dark/, '未选择时按系统主题决定图标与文案');
+
+  const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
+  assert.match(css, /\.icon-button:hover\{opacity:1;background:rgba\(127,127,127,\.22\)\}/, '图标按钮有悬浮反馈');
+  assert.match(css, /\.icon-button\.logout:hover\{color:var\(--accent\)/, '退出悬浮变红');
+  assert.match(css, /\.icon-button \.ico-dark\{display:none\}/, '默认（系统浅色）显示太阳');
+  assert.match(css, /:root\[data-theme="dark"\] \.icon-button \.ico-dark\{display:block\}/, '深色显示月亮');
+  assert.match(css, /:root:not\(\[data-theme="light"\]\) \.icon-button \.ico-dark\{display:block\}/, '未选择且系统深色时显示月亮');
+  assert.match(css, /\.hero-actions \.icon-button::after\{content:"";position:absolute;right:-11px/, '首屏图标右侧用细竖线与按钮分隔');
+  assert.ok(!css.includes('theme-switch') && !css.includes('ico-system'), '页脚按钮组与第三种图标已移除');
+
+  // 页脚贴底：内容不足一屏贴到窗口底部，超出时落在内容末尾（滚动可见）
+  assert.match(css, /body\{margin:0;min-height:100vh;display:flex;flex-direction:column/, '页面为 100vh 弹性列，页脚 y 上限＝窗口高－页脚高');
+  assert.match(css, /\.container\{width:100%;max-width:1180px;margin:0 auto;padding:34px 22px 0;flex:1 0 auto;display:flex;flex-direction:column;row-gap:34px\}/, '主容器撑满剩余高度，模块间距交给 row-gap');
+  assert.match(css, /\.site-footer\{margin-top:auto;padding:16px 0 22px/, '页脚靠 auto 上边距贴到内容之后或窗口底，底边与窗口齐平');
 });
 
 test('核销二次确认：标题与提示可由页面指定', () => {
@@ -511,11 +551,11 @@ test('核销二次确认：标题与提示可由页面指定', () => {
 
 test('列表刷新按钮与概览时区说明', () => {
   const list = couponsPage({ user, csrf: 'csrf-token', flash: null, coupons: [] });
-  assert.match(list, /<div class="actions"><a class="secondary button" href="\/admin\/coupons">刷新<\/a>/);
+  assert.match(list, /<div class="actions"><a class="secondary button" href="\/admin\/coupons" data-refresh>刷新<\/a>/);
   assert.match(list, /href="\/admin\/coupons\/new">创建优惠券</);
 
   const recycle = recyclePage({ user, csrf: 'csrf-token', flash: null, faces: [], codes: [] });
-  assert.match(recycle, /<div class="actions"><a class="secondary button" href="\/admin\/recycle">刷新<\/a>/);
+  assert.match(recycle, /<div class="actions"><a class="secondary button" href="\/admin\/recycle" data-refresh>刷新<\/a><\/div>/);
 
   const dash = dashboard({ user, csrf: 'csrf-token', flash: null, coupons: [], stats: { valid: 1, used: 2, expiring: 3, recycled: 0 } });
   assert.match(dash, /时间均为北京时间/, '概览要说明时间口径');
@@ -603,9 +643,9 @@ test('审计页：筛选表单、分页链接与表格列', () => {
     total: 41, page: 2, pages: 3,
     filters: { action: 'coupon', actor: '2', from: '2026-09-01', to: '' } });
   assert.match(html, /action="\/admin\/audit"/, 'GET 表单，结果 URL 可分享');
+  assert.match(html, /<div class="panel-head"><h2>筛选<\/h2>[\s\S]*?<div class="head-actions"><button class="primary" type="submit">查询<\/button><a class="secondary button" href="\/admin\/audit">重置<\/a><\/div><\/div>/, '筛选的查询/重置进标题行');
   assert.match(html, /method="get"/);
-  assert.match(html, /value="coupon" selected/, '类别回显选中');
-  assert.match(html, /value="2" selected/, '操作人回显选中');
+  assert.match(html, /value="coupon" selected/, '类别回显选中');  assert.match(html, /value="2" selected/, '操作人回显选中');
   assert.match(html, /biz（已停用）/, '停用账号在下拉里标注');
   assert.match(html, /superadmin（超管）/);
   assert.match(html, /name="from" value="2026-09-01"/, '日期回显');
@@ -663,4 +703,43 @@ test('登录页人机验证：配置密钥才渲染组件与第三方脚本，�
   assert.ok(on.includes('data-language="zh-CN"'), '组件界面用中文');
   assert.ok(on.includes('https://challenges.cloudflare.com/turnstile/v0/api.js'), '应加载官方组件脚本');
   assert.ok(on.includes('data-action="admin-login"'), '组件应带 action 便于审计关联');
+});
+
+test('后台 UI：标题区、面板头部、局部刷新与文案统一', () => {
+  const dash = dashboard({ user, csrf: 'csrf-token', flash: null, coupons: [], stats: { valid: 0, used: 0, expiring: 0, recycled: 0 } });
+  assert.match(dash, /<div class="panel-head"><h2>最近核销<\/h2><div class="head-actions"><a class="secondary button" href="\/admin\/redemptions">全部核销记录 →<\/a><\/div><\/div>/, '面板动作统一放标题行右侧');
+  assert.match(dash, /<div class="page-title"><h1>概览<\/h1><p>时间均为北京时间<\/p><\/div>/, '标题与小字同行（同一行结构）');
+
+  const redemptions = redemptionsPage({ user, csrf: 'csrf-token', flash: null, coupons: [], rows: [], total: 0, page: 1, pages: 1, filters: {} });
+  assert.match(redemptions, /<div class="panel-head"><h2>筛选<\/h2><div class="head-actions"><button class="primary" type="submit">查询<\/button><a class="secondary button" href="\/admin\/redemptions">重置<\/a><\/div><\/div>/, '筛选的查询/重置进标题行');
+  assert.match(redemptions, /class="back-arrow" href="\/admin"/, '核销记录用标题左侧箭头返回概览');
+  assert.ok(!dash.includes('back-arrow'), '概览是顶级页，没有返回箭头');
+
+  const presets = presetsPage({ user, csrf: 'csrf-token', flash: null, presets: [] });
+  assert.match(presets, /<div class="panel-head"><h2>新增预设<\/h2><div class="head-actions"><button class="primary">保存预设<\/button><\/div><\/div>/, '新增预设按钮进标题行');
+  assert.ok(!presets.includes('href="/admin/recycle">回收站<'), '顶栏移除回收站入口');
+
+  const recycle = recyclePage({ user, csrf: 'csrf-token', flash: null, faces: [{ id: 3, name: '旧券', offer_text: 'x', recycled_at: '2026-09-24T12:00:00.000Z' }], codes: [] });
+  assert.match(recycle, /name="return" value="\/admin\/recycle"/, '恢复后留在回收站');
+
+  const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
+  assert.match(css, /\.page-head>\.page-title\{display:flex;align-items:baseline/, '标题与小字基线对齐、同行显示');
+  assert.match(css, /\.back-arrow\{display:inline-flex/, '返回是标题左侧的箭头，取代整块返回按钮');
+  assert.match(css, /\.back-arrow:hover\{color:var\(--ink\)/, '悬浮时颜色变深');
+  assert.match(css, /\.code-create label\.count-field\{flex:0 0 120px\}/, '生成数量输入框收窄，不再占满整行');
+  assert.match(css, /\.panel-head\{display:flex;align-items:center/, '面板头部为一行布局');
+  assert.match(css, /\.panel-head \.tip\{position:static\}/, '面板头部的 ❓ 随标题排布，避让右侧按钮');
+  assert.match(css, /\.is-busy\{opacity:\.6;pointer-events:none\}/, '刷新请求期间给按钮忙碌态');
+
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(app, /closest\('\[data-refresh\]'\)/, '刷新按钮走局部更新');
+  assert.match(app, /restoreFields\(snapshot, '\\u0000refresh'\)/, '刷新保留未提交的输入');
+  assert.match(app, /nextMain\.querySelector\('\.site-footer'\)\?\.remove\(\)/, '局部替换时保留当前页脚，主题开关的高亮不被重置成默认');
+});
+
+test('状态操作回到来源页：服务端只接受同源后台 return', () => {
+  const server = readFileSync(new URL('../src/server.js', import.meta.url), 'utf8');
+  assert.match(server, /const returnPath = \(request, fallback\) =>/, '有 return 目标解析');
+  assert.match(server, /A-Za-z0-9\/_-\]\*\$\//, '只接受同源后台路径，防开放重定向');
+  assert.match(server, /returnPath\(request, status === 'recycled'/, '移入回收站等状态操作回原页');
 });

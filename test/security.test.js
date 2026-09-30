@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createIpCache, encrypt, decrypt, hashPassword, verifyPassword, normalizeCode, randomToken, randomCode, randomId, sha256, safeEqual, verifyTurnstile } from '../src/security.js';
+import { createIpCache, createIpLookup, encrypt, decrypt, hashPassword, verifyPassword, normalizeCode, randomToken, randomCode, randomId, sha256, safeEqual, verifyTurnstile } from '../src/security.js';
 
 const key = 'test-key-0123456789';
 
@@ -83,6 +83,29 @@ test('确认码为 xxx-xxx 共 6 位，字符集不含易混淆字符', () => {
     assert.ok(!/[01IO]/.test(code), `含易混淆字符：${code}`);
   }
   assert.ok(codes.size > 350, '应有足够的随机性');
+});
+
+test('回源 lookup：命中缓存按 all 回数组（Node 18+ 的 happy eyeballs），未命中回落解析并强制 IPv4', () => {
+  const cache = { get: () => ['203.0.113.7', '203.0.113.8'] };
+  const calls = [];
+  const fallback = (hostname, options, callback) => { calls.push({ hostname, options }); callback(null, '198.51.100.9', 4); };
+  const lookup = createIpLookup({ cache, host: 'example.test', lookup: fallback });
+
+  let all;
+  lookup('example.test', { all: true, hints: 0 }, (error, addresses) => { all = addresses; });
+  assert.deepEqual(all, [{ address: '203.0.113.7', family: 4 }, { address: '203.0.113.8', family: 4 }],
+    '带 all:true 时必须回数组——回三参形态会被 Node 当成数组取值，报 Invalid IP address: undefined');
+
+  let single;
+  lookup('example.test', {}, (error, address, family) => { single = { address, family }; });
+  assert.deepEqual(single, { address: '203.0.113.7', family: 4 }, '不带 all 时回单地址三参形态');
+
+  lookup('other.test', { all: true }, () => {});
+  assert.deepEqual(calls, [{ hostname: 'other.test', options: { all: true, family: 4 } }], '主机名不匹配不走缓存，回落系统解析并强制 IPv4');
+
+  const empty = createIpLookup({ cache: { get: () => [] }, host: 'example.test', lookup: fallback });
+  empty('example.test', { all: true }, () => {});
+  assert.equal(calls.length, 2, '缓存为空时回落系统解析');
 });
 
 test('verifyTurnstile：回源成功且域名符合预期才放行，请求带 secret、token 与来源 IP', async () => {
