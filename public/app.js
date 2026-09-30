@@ -6,20 +6,32 @@ let pending = null; // { form, submitter }
 const mask = document.createElement('div');
 mask.className = 'modal-mask';
 mask.hidden = true;
-mask.innerHTML = '<div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="modal-title"><h3 id="modal-title"></h3><p class="modal-text"></p><div class="modal-actions"><button type="button" class="secondary" data-cancel>取消</button><button type="button" class="primary" data-ok>确认</button></div></div>';
+mask.innerHTML = '<div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="modal-title"><h3 id="modal-title"></h3><p class="modal-text"></p><input class="modal-input" type="password" autocomplete="new-password" aria-label="新密码" hidden><div class="modal-actions"><button type="button" class="secondary" data-cancel>取消</button><button type="button" class="primary" data-ok>确认</button></div></div>';
 document.body.appendChild(mask);
 const modalTitle = mask.querySelector('#modal-title');
 const modalText = mask.querySelector('.modal-text');
+const modalInput = mask.querySelector('.modal-input');
 const okButton = mask.querySelector('[data-ok]');
 const cancelButton = mask.querySelector('[data-cancel]');
 
 function closeModal() {
   mask.hidden = true;
+  modalInput.hidden = true;
+  modalInput.value = '';
   pending = null;
 }
 
 function confirmSubmit() {
-  const { form, submitter } = pending || {};
+  const { form, submitter, prompt } = pending || {};
+  if (prompt) {
+    // 内嵌输入（重置密码）：不足长度就留在弹窗里提示，不提交
+    if (modalInput.value.length < prompt.min) {
+      modalText.textContent = `${prompt.hint}：至少 ${prompt.min} 位。`;
+      modalInput.focus();
+      return;
+    }
+    prompt.target.value = modalInput.value;
+  }
   closeModal();
   if (!form) return;
   form._confirmedSubmitter = submitter || null;
@@ -42,8 +54,28 @@ document.addEventListener('submit', (event) => {
   pending = { form, submitter };
   modalTitle.textContent = form.dataset.confirmTitle || (submitter ? submitter.dataset.confirmTitle : '') || '请确认';
   modalText.textContent = message;
+  modalInput.hidden = true;
   mask.hidden = false;
   okButton.focus();
+});
+
+// 重置密码：不在表格里摊开输入框，点按钮弹内嵌输入，确认后再提交
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-password-reset]');
+  if (!button) return;
+  const form = button.closest('form');
+  const target = form && form.querySelector('input[name="newPassword"]');
+  if (!form || !target) return;
+  event.preventDefault();
+  const min = Number(button.dataset.minlength) || 12;
+  const who = button.dataset.user || '该账号';
+  pending = { form, submitter: null, prompt: { target, min, hint: `输入「${who}」的新密码` } };
+  modalTitle.textContent = '重置密码';
+  modalText.textContent = `输入「${who}」的新密码（至少 ${min} 位）。重置后该账号的全部会话会失效。`;
+  modalInput.value = '';
+  modalInput.hidden = false;
+  mask.hidden = false;
+  modalInput.focus();
 });
 
 okButton.addEventListener('click', confirmSubmit);

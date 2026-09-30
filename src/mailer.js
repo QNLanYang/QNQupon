@@ -41,5 +41,10 @@ export async function sendTestMail(db, recipient) {
   const options = mailConfig(db, false);
   if (!options?.from) throw new Error('请先启用并完整配置 SMTP 与发件人。');
   const transport = nodemailer.createTransport(options);
-  await transport.sendMail({ from: options.from, to: recipient, subject: 'QNQupon SMTP 测试邮件', text: 'SMTP 配置生效，这是 QNQupon 的测试邮件。' });
+  const text = [
+    '这是一封测试邮件，用来验证「服务设置 → 邮件通知」里的 SMTP 配置是否可用。',
+    '它由管理员手动触发，与任何优惠券、核销记录无关。',
+    '如果你不认识这封邮件，直接忽略即可，不需要做任何处理。'
+  ].join('\n');
+  await transport.sendMail({ from: options.from, to: recipient, subject: '【测试】QNQupon · 券能行 邮件通知（可忽略）', text });
 }

@@ -7,7 +7,17 @@
 .mail.sent>svg{color:var(--good)}
 .mail.failed>svg{color:var(--bad)}
 .mail.pending>svg{color:var(--warn)}
-.mail.skipped>svg{color:var(--muted)}td small{display:block;color:var(--muted);margin-top:3px}.badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:12px;font-weight:bold}.empty{text-align:center;color:var(--muted);padding:28px}.form-panel{max-width:750px}.form-panel label,.auth-card label{display:block;font-weight:700;margin:14px 0}.form-panel input,.form-panel textarea,.form-panel select,.auth-card input,.inline-form input{width:100%;margin-top:5px;border:1px solid var(--field-border);border-radius:9px;padding:10px 11px;background:var(--field-bg);font:inherit}.form-panel textarea{min-height:82px;resize:vertical}.form-grid,.detail-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:16px}.form-panel .check{font-weight:normal}.form-panel .check input{width:auto;margin-right:8px}.actions,.danger-row{display:flex;flex-wrap:wrap;gap:9px}.danger-row{margin-top:22px}.details{display:grid;grid-template-columns:115px 1fr;gap:11px;margin:0}.details dt{color:var(--muted)}.details dd{margin:0;white-space:pre-wrap}.auth-card{width:100%;max-width:520px;margin:8vh auto}.auth-card h1{margin-top:0}.auth-card form{margin-top:20px}.form-error,.flash{padding:10px 13px;border-radius:10px;margin-bottom:18px}.form-error,.flash.error{background:var(--flash-err-bg);color:var(--flash-err-fg)}.flash.success{background:var(--flash-ok-bg);color:var(--flash-ok-fg)}.flash.info{background:var(--flash-info-bg);color:var(--flash-info-fg)}.result{padding:18px;border-radius:14px;margin-top:22px}.result.success{background:#dff6e9;color:#075f43}.result h2{margin:0 0 7px}.inline-form{display:flex;gap:8px;max-width:560px}.inline-form input{margin:0}@media(max-width:720px){.topbar{padding:12px 18px;flex-wrap:wrap;gap:12px}.topbar nav{order:3;flex-basis:100%;overflow:auto}.container{padding:22px 14px 0}.stats,.detail-grid,.form-grid{grid-template-columns:1fr 1fr}.panel{padding:14px}.public-body .container{padding-top:26px}.public-card{padding:25px}.inline-form{flex-direction:column}}@media(max-width:440px){.form-grid,.detail-grid{grid-template-columns:1fr}.coupon-meta{grid-template-columns:1fr}}
+.mail.skipped>svg{color:var(--muted)}td small{display:block;color:var(--muted);margin-top:3px}.badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:12px;font-weight:bold}
+/* 确认码/券码 ID 等行内代码：等宽 + 胶囊外框 + 略微放宽字距，便于肉眼核对 */
+code{font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;font-size:.92em;letter-spacing:.08em;background:var(--code-bg);border:1px solid var(--code-border-sm);border-radius:999px;padding:2px 7px;white-space:nowrap}.empty{text-align:center;color:var(--muted);padding:28px}.form-panel{max-width:750px}.form-panel label,.auth-card label{display:block;font-weight:700;margin:14px 0}.form-panel input,.form-panel textarea,.form-panel select,.auth-card input,.inline-form input{width:100%;margin-top:5px;border:1px solid var(--field-border);border-radius:9px;padding:10px 11px;background:var(--field-bg);font:inherit}.form-panel textarea{min-height:82px;resize:vertical}.form-grid,.detail-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:16px}.form-panel .check{font-weight:normal}.form-panel .check input{width:auto;margin-right:8px}
+/* 布尔开关：复选框做成现代开关（appearance:none + 轨道/圆点），后台设置页用 */
+.form-panel .check.switch{display:flex;align-items:center;gap:10px}
+.form-panel .check.switch input{appearance:none;-webkit-appearance:none;width:44px;height:26px;margin:0;border:1px solid var(--field-border);border-radius:999px;background:var(--secondary-bg);position:relative;cursor:pointer;transition:background-color .15s,border-color .15s;flex:0 0 auto}
+.form-panel .check.switch input::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #00000033;transition:transform .15s}
+.form-panel .check.switch input:checked{background:var(--accent);border-color:var(--accent)}
+.form-panel .check.switch input:checked::after{transform:translateX(18px)}
+.form-panel .check.switch input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.field-hidden{display:none}.actions,.danger-row{display:flex;flex-wrap:wrap;gap:9px}.danger-row{margin-top:22px}.details{display:grid;grid-template-columns:115px 1fr;gap:11px;margin:0}.details dt{color:var(--muted)}.details dd{margin:0;white-space:pre-wrap}.auth-card{width:100%;max-width:520px;margin:8vh auto}.auth-card h1{margin-top:0}.auth-card form{margin-top:20px}.form-error,.flash{padding:10px 13px;border-radius:10px;margin-bottom:18px}.form-error,.flash.error{background:var(--flash-err-bg);color:var(--flash-err-fg)}.flash.success{background:var(--flash-ok-bg);color:var(--flash-ok-fg)}.flash.info{background:var(--flash-info-bg);color:var(--flash-info-fg)}.result{padding:18px;border-radius:14px;margin-top:22px}.result.success{background:#dff6e9;color:#075f43}.result h2{margin:0 0 7px}.inline-form{display:flex;gap:8px;max-width:560px}.inline-form input{margin:0}@media(max-width:720px){.topbar{padding:12px 18px;flex-wrap:wrap;gap:12px}.topbar nav{order:3;flex-basis:100%;overflow:auto}.container{padding:22px 14px 0}.stats,.detail-grid,.form-grid{grid-template-columns:1fr 1fr}.panel{padding:14px}.public-body .container{padding-top:26px}.public-card{padding:25px}.inline-form{flex-direction:column}}@media(max-width:440px){.form-grid,.detail-grid{grid-template-columns:1fr}.coupon-meta{grid-template-columns:1fr}}
 
 /* ===== 手机档（≤640px）：收银机/手机是主要使用场景，操作必须顺畅 =====
    顶栏压成单行；表单/详情改单列；后台表格改成「卡片」：首列当标题，其余按「标签: 值」逐行，
@@ -18,7 +28,8 @@
   .brand-mark{width:26px;height:26px}
   .topbar nav{order:0;flex:1 1 auto;flex-basis:auto;min-width:0;gap:14px;flex-wrap:nowrap;white-space:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .topbar nav::-webkit-scrollbar{display:none}
-  /* 这几条带 .topbar/.topbar-side 前缀：它们的基础规则在本文件更靠后，同级会被覆盖 */
+  /* 手机档规则在本文件前部；若某条基础规则在文件更靠后，选择器要加前缀提高优先级，否则会被覆盖
+     （已知：顶栏菜单相关、.qr-preview / .qr-links） */
   .topbar .menu-toggle{display:inline-flex}
   .topbar-side .side-panel{display:none;position:absolute;right:0;top:calc(100% + 8px);min-width:210px;padding:8px;border-radius:14px;background:var(--topbar-bg);box-shadow:0 20px 44px #00000066;flex-direction:column;align-items:stretch;gap:2px;z-index:60}
   .topbar-side[data-open] .side-panel{display:flex}
@@ -36,7 +47,8 @@
   .page-head>.page-title>h1,.page-head>.page-title>.back-arrow{order:1}
   .page-head>.actions{order:2;margin-left:auto}
   .page-head>.page-title>p{order:3;flex:1 1 100%;margin:0}
-  .detail-grid,.form-grid{grid-template-columns:1fr}
+  .detail-grid{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr 1fr}
   .details{grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr);gap:8px 14px}
   .details dt{margin:0;font-size:12px;align-self:center}
   .details dd{margin:0}
@@ -54,8 +66,16 @@
   .admin-body .panel td[data-label="状态"]::before{content:none}
   .admin-body .panel td:first-child{padding-bottom:4px;padding-right:80px}
   .admin-body .panel td:first-child a{font-size:16px}
-  .admin-body .panel tr:not(.record-row)>td:not(:first-child):not(.row-ops):not([data-priority="low"]):not([data-label="状态"]){display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:13px}
-  .admin-body .panel tr:not(.record-row)>td:not(:first-child):not(.row-ops):not([data-priority="low"]):not([data-label="状态"])::before{content:attr(data-label);color:var(--muted);flex:0 0 auto}
+  .admin-body .panel tr:not(.record-row):not(.code-card)>td:not(:first-child):not(.row-ops):not([data-priority="low"]):not([data-label="状态"]){display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:13px}
+  .admin-body .panel tr:not(.record-row):not(.code-card)>td:not(:first-child):not(.row-ops):not([data-priority="low"]):not([data-label="状态"])::before{content:attr(data-label);color:var(--muted);flex:0 0 auto}
+  /* 券码列表卡片：名称 + 状态徽章一行；ID/备注 + 已用一行；操作一行 */
+  .admin-body .panel tr.code-card{display:grid;grid-template-columns:1fr auto;gap:2px 10px}
+  .admin-body .panel tr.code-card>td{border:0;padding:0}
+  .admin-body .panel tr.code-card>td:first-child{grid-row:1/3;grid-column:1/2;padding:0}
+  .admin-body .panel tr.code-card>td[data-label="状态"]{position:static;grid-row:1/2;grid-column:2/3;justify-self:end;align-self:start;padding:0}
+  .admin-body .panel tr.code-card>td[data-label="状态"]::before{content:none}
+  .admin-body .panel tr.code-card>td[data-label="已用"]{grid-row:2/3;grid-column:2/3;justify-self:end;align-self:center;padding:0;font-size:13px;color:var(--muted)}
+  .admin-body .panel tr.code-card>.row-ops{grid-row:3/4;grid-column:1/3}
   /* 核销记录卡片：第一行 时间 · 邮件图标 · 确认码；第二行券码名 + 备注（不显示字段名） */
   .admin-body .panel tr.record-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
   .admin-body .panel tr.record-row>td{border:0;padding:0}
@@ -67,11 +87,17 @@
   .admin-body .panel tr.record-row td small{display:inline;margin:0}
   .admin-body .panel .mail>svg{display:block}
   .admin-body .panel .mail-text{display:none}
-  .admin-body .panel td.row-ops{display:flex;flex-wrap:wrap;gap:8px;min-width:0;white-space:normal;margin-top:8px;padding-top:10px;border-top:1px dashed var(--line)}
+  .admin-body .panel td.row-ops{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;min-width:0;white-space:normal;margin-top:8px;padding-top:10px;border-top:1px dashed var(--line)}
+  .admin-body .danger-row{justify-content:flex-end}
+  /* 二维码与按钮：手机上收紧间距，让按钮列留在二维码右边不换行
+     （.qr-preview / .qr-links 的基础规则在本文件更靠后，故带 .admin-body 前缀提高优先级） */
+  .admin-body .qr-preview{gap:12px}
+  .admin-body .qr-links{min-width:0;flex:1 1 auto}
   .admin-body .panel td.row-ops .inline-form{flex-direction:row;margin:0}
   .admin-body .panel .empty{display:block;padding:20px 6px}
   .admin-body .table-scroll{max-height:none;overflow:visible}
-  .row-ops .button,.row-ops button,.inline-form button{min-height:42px;padding:9px 14px;font-size:14px}
+  /* ① 手机档按钮收紧：外框略高于标题字（约 30px），左右各约半个字宽；卡片内按钮同样适用 */
+  .admin-body button,.admin-body .button{padding:5px 8px;font-size:13.5px;line-height:1.45;border-radius:9px;min-height:0}
   .admin-body .panel{overflow:visible}
   /* 导航横向滑动时，未显示全的一侧淡出，提示「还有内容」 */
   .topbar nav[data-fade-left]{-webkit-mask-image:linear-gradient(to right,transparent,#000 20px);mask-image:linear-gradient(to right,transparent,#000 20px)}
@@ -81,8 +107,8 @@
 
 .preset-list{display:flex;flex-direction:column;gap:18px}.preset-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.preset-head h2{margin:0}.row-ops{white-space:nowrap}table td.row-ops{min-width:300px}.row-ops form,.inline-form{display:inline-flex;gap:6px;align-items:center;margin:2px 6px 2px 0}.row-ops input[type=password]{max-width:160px;padding:6px 8px}.users-table th,.users-table td:not(.row-ops){white-space:nowrap}.users-table td.row-ops{white-space:normal}
 .panel-head{display:flex;align-items:center;gap:12px;margin:0 0 14px}.panel-head h2{margin:0}.panel-head .tip{position:static}.panel-head .tip .tip-body{left:10px;right:auto;top:32px;width:min(88%,420px)}.panel-head .head-actions{margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.is-busy{opacity:.6;pointer-events:none}.back-arrow{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:9px;color:var(--muted);align-self:center;flex:0 0 auto;transition:color .15s,background-color .15s}.back-arrow:hover{color:var(--ink);background:var(--secondary-bg)}.back-arrow:active{color:var(--accent);background:var(--secondary-hover-bg)}.back-arrow svg{width:19px;height:19px;display:block}
-.qr-preview{display:flex;gap:18px;align-items:center;margin-top:20px;padding-top:18px;border-top:1px dashed var(--line);flex-wrap:wrap}.qr-preview img{display:block;width:150px;height:150px;border:1px solid var(--line);border-radius:14px;background:#fff}.qr-links{display:flex;flex-direction:column;gap:8px;align-items:flex-start;min-width:200px}.qr-links p{margin:0}
-.modal-mask{position:fixed;inset:0;z-index:60;background:#10182899;display:flex;align-items:center;justify-content:center;padding:22px}.modal-mask[hidden]{display:none}.modal-card{background:var(--paper);width:100%;max-width:430px;border-radius:18px;padding:26px;box-shadow:var(--shadow-modal)}.modal-card h3{margin:0 0 8px}.modal-text{color:var(--muted);white-space:pre-wrap}.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+.qr-preview{display:flex;gap:18px;align-items:center;margin-top:20px;padding-top:18px;border-top:1px dashed var(--line);flex-wrap:wrap}.qr-preview img{display:block;width:150px;height:150px;padding:11px;border:1px solid var(--line);border-radius:7px;background:#fff}.qr-links{display:flex;flex-direction:column;gap:8px;align-items:flex-start;min-width:200px}.qr-links p{margin:0}
+.modal-mask{position:fixed;inset:0;z-index:60;background:#10182899;display:flex;align-items:center;justify-content:center;padding:22px}.modal-mask[hidden]{display:none}.modal-card{background:var(--paper);width:100%;max-width:430px;border-radius:18px;padding:26px;box-shadow:var(--shadow-modal)}.modal-card h3{margin:0 0 8px}.modal-text{color:var(--muted);white-space:pre-wrap}.modal-input{width:100%;margin-top:12px;border:1px solid var(--field-border);border-radius:9px;padding:10px 11px;background:var(--field-bg);font:inherit}.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
 .form-panel label small{font-weight:400;color:var(--muted)}
 /* 面板说明入口（❓ 气泡）：纯 CSS 零 JS——鼠标悬浮或元素获得焦点（触屏点按）时显示，点别处失焦即收。
    说明只放「不看会做错」的规则与联动；面板常驻文案保持 0～1 行。 */
@@ -117,7 +143,7 @@
 .verify-code{display:flex;justify-content:space-between;font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;font-weight:800;font-size:clamp(32px,12vw,56px);line-height:1.25;padding:14px 10px;margin:16px 0 12px;background:var(--code-bg);border:2px dashed var(--code-border);border-radius:14px;color:var(--good);font-variant-numeric:tabular-nums}.verify-code span{flex:1 1 0;text-align:center;min-width:0}
 .code-create{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;max-width:760px}.code-create label{margin:0;flex:1 1 190px}.code-create label.count-field{flex:0 0 120px}.code-create input{width:100%}.code-create button{flex:0 0 auto}
 .note-form{max-width:620px;margin-top:6px}.note-form label{margin:0;flex:1 1 auto}.note-form input{width:100%}
-.qr-preview .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.qr-preview .actions{display:flex;flex-direction:column;gap:8px;align-items:stretch;margin-top:8px}
 .detail-grid>.wide{grid-column:1/-1}
 /* 后台页顶层模块的纵向节奏交给容器的 row-gap。内容不足一屏时页脚靠 auto 上边距贴到视口底部，
    超出时页脚落在内容末尾（需滚动到底）。flex 下外边距不再折叠，所以原有的下边距要归零，避免与 gap 叠加。 */

@@ -772,7 +772,11 @@ test('手机档：顶栏折叠菜单、表格卡片化与单列表单', () => {
   assert.match(css, /\.details\{grid-template-columns:auto minmax\(0,1fr\) auto minmax\(0,1fr\);gap:8px 14px\}/, '券面/券码信息手机档双列（长字段用 .wide 独占一行）');
   assert.match(css, /\.admin-body \.panel thead\{display:none\}/, '表格手机档隐藏表头');
   assert.match(css, /\.admin-body \.panel td\[data-priority="low"\]\{display:none\}/, '次要列手机档隐藏');
-  assert.match(css, /\.admin-body \.panel tr:not\(\.record-row\)>td:not\(:first-child\):not\(\.row-ops\):not\(\[data-priority="low"\]\):not\(\[data-label="状态"\]\)::before\{content:attr\(data-label\)/, '非首列（状态与核销记录除外）显示「标签」');
+  assert.match(css, /\.admin-body \.panel tr:not\(\.record-row\):not\(\.code-card\)>td:not\(:first-child\):not\(\.row-ops\):not\(\[data-priority="low"\]\):not\(\[data-label="状态"\]\)::before\{content:attr\(data-label\)/, '非首列（状态、核销记录、券码卡片除外）显示「标签」');
+  assert.match(css, /\.admin-body \.panel tr\.code-card\{display:grid;grid-template-columns:1fr auto/, '券码卡片：名称 + 状态徽章一行、ID + 已用一行');
+  assert.match(css, /\.admin-body \.panel tr\.code-card>td\[data-label="已用"\]\{grid-row:2\/3;grid-column:2\/3/, '已用次数排到 ID 行右侧');
+  const codeRowsHtml = couponDetail({ user, csrf: 'csrf-token', flash: null, coupon: faceOf(), codes: [codeOf()], redemptions: [] });
+  assert.match(codeRowsHtml, /<tr class="code-card">/, '券码行标记 code-card');
   assert.match(css, /\.mail>svg\{width:18px;height:18px;display:none\}/, '邮件状态图标默认隐藏（桌面看文字）');
   assert.match(css, /\.mail\.sent>svg\{color:var\(--good\)\}/, '送达=绿色信封');
   assert.match(css, /\.mail\.failed>svg\{color:var\(--bad\)\}/, '失败=红色信封');
@@ -791,7 +795,7 @@ test('手机档：顶栏折叠菜单、表格卡片化与单列表单', () => {
   assert.match(css, /\.container\{padding-top:12px\}/, '手机档内容上边距收紧');
   assert.match(css, /\.details dt\.wide\{grid-column:1\/2\}/, '长字段标 wide 后标签与值同行铺满');
   assert.match(css, /\.admin-body \.table-scroll\{max-height:none;overflow:visible\}/, '手机档取消券码表限高');
-  assert.match(css, /\.row-ops \.button,\.row-ops button,\.inline-form button\{min-height:42px/, '手机档点击目标加高');
+  assert.match(css, /\.admin-body button,\.admin-body \.button\{padding:5px 8px/, '手机档按钮收紧（外框略高于标题字）');
 
   // 各表的单元格都带「标签」，次要列标了 low
   const recycle = recyclePage({ user, csrf: 'csrf-token', flash: null, faces: [{ id: 3, name: '旧券', offer_text: 'x', recycled_at: '2026-09-24T12:00:00.000Z' }], codes: [] });
@@ -825,8 +829,53 @@ test('细节修正：登录卡片宽度、页脚单行、面板不出内部滚�
 
   // 名称与次要信息同在一个链接里
   const list = couponsPage({ user, csrf: 'csrf-token', flash: null, coupons: [{ id: 1, name: 'A', offer_text: 'x', max_uses: 1, code_total: 1, code_available: 1, used_total: 0, current_state: 'valid' }] });
-  assert.match(list, /<a href="\/admin\/coupons\/1">A<small>x<\/small><\/a>/, '券面列表：优惠内容在可点范围内');
+  assert.match(list, /<a href="\/admin\/coupons\/1">A<small>x · 1 次\/张<\/small><\/a>/, '券面列表：优惠内容在可点范围内，并带次数');
   const detail = couponDetail({ user, csrf: 'csrf-token', flash: null, coupon: faceOf(), codes: [codeOf()], redemptions: [] });
   assert.match(detail, /<a href="\/admin\/codes\/cd-AbCdEfGh1234">张三的券<small>/, '券码列表：券码 ID 在可点范围内');
+});
+
+test('手机按钮收紧、设置页双列与开关、账号页与测试邮件', () => {
+  const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+
+  assert.match(css, /\.admin-body button,\.admin-body \.button\{padding:5px 8px;font-size:13\.5px;line-height:1\.45;border-radius:9px;min-height:0\}/, '手机档按钮收紧到略高于标题字，左右各约半个字');
+  assert.match(css, /\.form-grid\{grid-template-columns:1fr 1fr\}/, '手机档表单改双列（短输入框不再独占一行）');
+  assert.match(css, /\.form-panel \.check\.switch input\{appearance:none;-webkit-appearance:none;width:44px;height:26px/, '布尔开关用现代开关 UI');
+  assert.match(css, /\.form-panel \.check\.switch input:checked\{background:var\(--accent\)/, '开关打开时用强调色');
+  assert.match(css, /\.modal-input\{width:100%;margin-top:12px/, '弹窗内嵌输入框样式');
+  assert.match(css, /\.qr-preview img\{display:block;width:150px;height:150px;padding:11px;border:1px solid var\(--line\);border-radius:7px;background:#fff\}/, '二维码外框不变、圆角减半、二维码略缩');
+  assert.match(css, /\.qr-preview \.actions\{display:flex;flex-direction:column;gap:8px;align-items:stretch/, '打开/下载/预览按钮竖排在二维码右边');
+  assert.match(css, /code\{font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;font-size:\.92em;letter-spacing:\.08em;background:var\(--code-bg\);border:1px solid var\(--code-border-sm\);border-radius:999px/, '确认码/券码 ID 用等宽胶囊包裹、字距略放宽');
+  assert.match(css, /\.admin-body \.panel td\.row-ops\{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end/, '手机档操作按钮靠右');
+  assert.match(css, /\.admin-body \.qr-preview\{gap:12px\}/, '手机档二维码与按钮列间距收紧（不换行）');
+  assert.match(css, /\.admin-body \.qr-links\{min-width:0;flex:1 1 auto\}/, '手机档按钮列留在二维码右边');
+  assert.match(css, /\.danger-row\{justify-content:flex-end\}/, '手机档停用/删除靠右');
+  assert.match(app, /closest\('button\[data-password-reset\]'\)/, 'app.js 接管重置密码弹窗');
+  assert.match(app, /prompt\.target\.value = modalInput\.value/, '确认后把输入值写进隐藏字段再提交');
+
+  const list = couponsPage({ user, csrf: 'csrf-token', flash: null, coupons: [{ id: 1, name: 'A', offer_text: 'x', max_uses: 1, code_total: 1, code_available: 1, used_total: 0, current_state: 'valid' }] });
+  assert.match(list, /<small>x · 1 次\/张<\/small>/, '券面列表在优惠内容后加次数');
+
+  const users = usersPage({ user, csrf: 'csrf-token', flash: null, users: [{ id: 2, username: 'biz', role: 'business_admin', active: 1, last_login_at: null }] });
+  assert.match(users, /<div class="panel-head"><h2>创建业务管理员<\/h2><div class="head-actions"><button class="primary">创建账号<\/button><\/div><\/div>/, '创建账号按钮移到卡片标题行（桌面同步）');
+  assert.match(users, /<input type="password" name="newPassword" class="field-hidden"/, '重置密码的输入框改为隐藏，由弹窗输入');
+  assert.match(users, /<button type="button" class="danger" data-password-reset data-minlength="12" data-user="biz">重置密码<\/button>/, '重置密码按钮带弹窗参数');
+  assert.ok(!users.includes('placeholder="新密码'), '表格里不再摊开密码输入框');
+
+  const settings = settingsPage({ user, csrf: 'csrf-token', flash: null, settings: {} });
+  assert.match(settings, /class="check switch"><input type="checkbox" name="mailEnabled"/, '邮件通知开关用开关 UI');
+  assert.match(settings, /class="check switch"><input type="checkbox" name="showCodeName"/, '券码名开关用开关 UI');
+  assert.match(settings, /class="check switch"><input type="checkbox" name="pngDark"/, '深色版面开关用开关 UI');
+  assert.match(settings, /<button class="secondary" type="submit" form="settings-test-mail" data-confirm="将向「通知收件人」发送一封测试邮件（内容已注明可忽略），确认发送？">发送测试邮件<\/button>/, '测试邮件按钮移到保存按钮旁并二次确认');
+  assert.match(settings, /<form id="settings-test-mail" method="post" action="\/admin\/settings\/test-email">/, '测试邮件走独立表单（不嵌套）');
+  assert.ok(!settings.includes('placeholder="临时收件地址"'), '不再手填测试收件地址');
+  assert.ok(!settings.includes('<h2>发送测试邮件</h2>'), '独立的测试邮件面板已移除');
+
+  const server = readFileSync(new URL('../src/server.js', import.meta.url), 'utf8');
+  assert.match(server, /const recipients = String\(db\.getSetting\('mailRecipients', ''\) \|\| ''\)\.split/, '测试邮件发给已保存的通知收件人');
+  assert.match(server, /请先填写「通知收件人」并保存邮件设置。/, '收件人为空时给出提示');
+  const mailer = readFileSync(new URL('../src/mailer.js', import.meta.url), 'utf8');
+  assert.match(mailer, /可忽略/, '测试邮件文案注明可忽略');
+  assert.match(mailer, /【测试】/, '测试邮件标题带【测试】');
 });
 
