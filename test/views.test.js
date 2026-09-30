@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { login, publicCoupon, usersPage, presetsPage, couponDetail, codeDetail, forbidden, couponsPage, recyclePage, dashboard, couponForm, profilePage, verifyPage, rateLimited, settingsPage, redemptionsPage, auditPage, home } from '../src/views.js';
+import { login, publicCoupon, usersPage, presetsPage, couponDetail, codeDetail, forbidden, couponsPage, recyclePage, dashboard, couponForm, profilePage, verifyPage, rateLimited, settingsPage, redemptionsPage, auditPage, home, beijingTime } from '../src/views.js';
 
 const faceOf = (over = {}) => ({
   id: 7, name: '券', offer_text: 'x', description: null, instructions: null, store_text: null,
@@ -52,7 +52,7 @@ test('公开券页：可核销时有按钮，非可核销时没有按钮', () =>
 
   const redeemed = publicCoupon({ ...base, current_state: 'exhausted', used_count: 5 }, 'pub-csrf', { kind: 'redeemed', token: 'tok', redeemedAt: '2026-09-24T12:00:00.000Z', code: 'ABC-123' });
   assert.match(redeemed, /核销成功/);
-  assert.match(redeemed, /核销时间：2026-09-24 20:00:00/, '核销时间要显示北京时间（UTC 存储 +8）');
+  assert.match(redeemed, /核销时间：(?:[0-9]{4}-)?09-24 20:00:00/, '核销时间要显示北京时间（UTC 存储 +8）');
   assert.match(redeemed, /data-code="ABC-123"/, '应有可读取的凭证码属性');
   assert.match(redeemed, /<span>A<\/span><span>B<\/span><span>C<\/span>/, '凭证码逐位拆开用于分散对齐');
   assert.ok(!redeemed.includes('剩余次数'), '结果页不显示剩余次数');
@@ -255,7 +255,7 @@ test('核销凭证查询页：表单 + 成功/查不到/格式错三态，且不
   } } });
   assert.match(ok, /这是真实的核销记录/);
   assert.match(ok, /测试券 - 张三的券/, '显示券面名 - 券码名');
-  assert.match(ok, /核销时间：2026-09-24 20:00:00/, '北京时间（UTC 存储 +8）');
+  assert.match(ok, /核销时间：(?:[0-9]{4}-)?09-24 20:00:00/, '北京时间（UTC 存储 +8）');
   assert.match(ok, /邮件通知：已发送/, '展示邮件通知状态');
   assert.match(ok, /verify-code sm/, '确认码缩为顶部小标题');
   assert.match(ok, /result-lead big/, '券面/券码是视觉重心');
@@ -307,7 +307,7 @@ test('列表与概览：合并日期列、无更新时间列、券码统计列',
   assert.ok(!html.includes('更新时间'), '不应再显示更新时间列');
   assert.ok(!html.includes('2026-09-24T12:00'), '不应出现更新时间数据');
   assert.match(html, /<th>日期<\/th>/);
-  assert.match(html, /2026-09-01 ~ 2026-10-01/, '起止都有');
+  assert.match(html, /2026-09-01 ~ 2026-10-01/, '起止都有（有效期类始终带年份）');
   assert.match(html, /即日起 ~ 2026-10-01/, '只有截止');
   assert.match(html, /2026-09-01 ~ 永久/, '只有起始');
   assert.match(html, /永久/);
@@ -344,7 +344,7 @@ test('回收站页：券面与券码两栏、恢复入口与导航', () => {
   assert.match(html, /action="\/admin\/codes\/cd-Qq1Ww2Ee3Rr4\/status"/, '券码也要能恢复');
   assert.match(html, /name="status" value="active"/);
   assert.ok(!html.includes('>详情</a>'), '券面/券码名可点进详情，行内不再重复放「详情」按钮');
-  assert.match(html, /2026-09-24 20:00/, '移入时间按北京时间显示（UTC+8）');
+  assert.match(html, /(?:[0-9]{4}-)?09-24 20:00/, '移入时间按北京时间显示（UTC+8）');
   assert.match(html, /李四/, '券码要显示备注便于认领');
   assert.ok(!html.includes('/purge'), '永久删除不放在回收站列表，保留在详情页勾选确认');
   assert.match(html, /移入满 30 天自动永久删除/, '默认保留天数写进说明');
@@ -375,7 +375,7 @@ test('优惠券列表与概览带回收站入口', () => {
 
   const dash2 = dashboard({ user, csrf: 'csrf-token', flash: null, coupons: [], stats: { valid: 0, used: 1, expiring: 0, recycled: 0 },
     redemptions: [{ redeemed_at: '2026-09-24T12:00:00.000Z', coupon_id: 3, face_name: '测试券', code_name: '张三的券', confirmation_code: 'HLZ-B7T', email_status: 'sent' }] });
-  assert.match(dash2, /2026-09-24 20:00/, '时间按北京时间');
+  assert.match(dash2, /(?:[0-9]{4}-)?09-24 20:00/, '时间按北京时间');
   assert.match(dash2, /href="\/admin\/coupons\/3"/, '可跳券面详情');
   assert.match(dash2, /测试券/);
   assert.match(dash2, /张三的券/);
@@ -619,7 +619,7 @@ test('服务设置页：PNG 字体三选一（默认思源）与深色版面开�
 test('核销记录总页：筛选表单、分页链接与表格列', () => {
   const html = redemptionsPage({ user, csrf: 'csrf-token', flash: null,
     coupons: [{ id: 3, name: '旧券', status: 'active' }, { id: 5, name: '停用券', status: 'disabled' }],
-    rows: [{ redeemed_at: '2026-09-24T12:00:00.000Z', coupon_id: 3, code_id: 'cd-Qq1Ww2Ee3Rr4', code_name: '李四的码', code_note: '李四', confirmation_code: 'HLZ-B7T', source_ip: '1.1.1.1', email_status: 'sent' }],
+    rows: [{ redeemed_at: '2026-09-24T12:00:00.000Z', coupon_id: 3, face_name: '旧券', offer_text: '立减 5 元', code_id: 'cd-Qq1Ww2Ee3Rr4', code_name: '李四的码', code_note: '李四', confirmation_code: 'HLZ-B7T', source_ip: '1.1.1.1', email_status: 'sent' }],
     total: 41, page: 2, pages: 3,
     filters: { coupon: '3', from: '2026-09-01', to: '' } });
   assert.match(html, /action="\/admin\/redemptions"/, 'GET 表单，结果 URL 可分享');
@@ -630,12 +630,22 @@ test('核销记录总页：筛选表单、分页链接与表格列', () => {
   assert.match(html, /<span class="popover-count">2<\/span>/, '已选条件数用角标提示，免得把筛选结果当成全量');
   assert.match(html, /41 条/, '总条数可见');
   assert.match(html, /第 2 \/ 3 页/, '页码可见');
-  assert.match(html, /2026-09-24 20:00/, '时间按北京时间');
+  assert.match(html, /(?:[0-9]{4}-)?09-24 20:00/, '时间按北京时间');
   assert.match(html, /href="\/admin\/coupons\/3"/, '券面可跳详情');
   assert.match(html, /href="\/admin\/codes\/cd-Qq1Ww2Ee3Rr4"/, '券码可跳详情');
   assert.match(html, /HLZ-B7T/);
   assert.match(html, /1\.1\.1\.1/, '后台可见来源 IP');
   assert.match(html, /已发送/);
+  assert.match(html, /<td data-label="券面"><a href="\/admin\/coupons\/3">旧券<\/a><small>立减 5 元<\/small><\/td>/, '券面行：左券面名、右优惠内容（不写死字段名，说明收进 ❓）');
+  assert.match(html, /<td data-label="券码"><a href="\/admin\/codes\/cd-Qq1Ww2Ee3Rr4">李四的码<\/a><small>李四<\/small><\/td>/, '券码行：左券码名、右备注');
+  assert.ok(!html.includes('rec-lbl'), '标签不写在卡片里，改由右上角 ❓ 说明');
+  assert.match(html, /<h2>记录（41 条）<\/h2><span class="tip"><button type="button" aria-label="本面板说明">\?<\/button>[\s\S]{0,400}左侧是券面与券码，右侧是优惠内容与备注[\s\S]{0,200}变灰、描红/, '卡片右上角 ❓ 说明两栏含义与过期确认码的样式');
+  assert.match(html, /<td data-label="确认码"><code class="expired">HLZ-B7T<\/code><\/td>/, '超出可查时长的确认码：字变灰、外框描红');
+
+  const fresh = redemptionsPage({ user, csrf: 'csrf-token', flash: null, coupons: [], total: 1, page: 1, pages: 1, filters: {},
+    rows: [{ redeemed_at: new Date(Date.now() - 3600 * 1000).toISOString(), coupon_id: 1, face_name: '券', offer_text: 'x', code_id: 'cd-fresh', code_name: '码', code_note: '', confirmation_code: 'AAA-BBB', source_ip: '1.1.1.1', email_status: 'sent' }] });
+  assert.match(fresh, /<td data-label="确认码"><code>AAA-BBB<\/code><\/td>/, '仍在可查时长内的确认码不加过期样式');
+  assert.ok(!fresh.includes('class="expired"'), '没过期就不该出现过期样式');
   assert.match(html, /href="\/admin\/redemptions\?coupon=3&from=2026-09-01">上一页/, '翻页保留筛选条件，第 1 页省略 page 参数');
   assert.match(html, /href="\/admin\/redemptions\?coupon=3&from=2026-09-01&page=3">下一页/);
 
@@ -664,10 +674,10 @@ test('审计页：筛选表单、分页链接与表格列', () => {
   assert.match(html, /name="from" value="2026-09-01"/, '日期回显');
   assert.match(html, /41 条/);
   assert.match(html, /第 2 \/ 3 页/);
-  assert.match(html, /2026-09-24 20:00/, '时间按北京时间');
+  assert.match(html, /(?:[0-9]{4}-)?09-24 20:00/, '时间按北京时间');
   assert.match(html, /coupon 7/, '对象列');
   assert.match(html, /<tr class="audit-row">/, '审计行用独立的卡片布局（时间一行、账号与对象与操作一行）');
-  assert.match(html, /<tr class="audit-row"><td data-label="">2026-09-24 20:00/, '审计卡片第一行只有时间，不带字段名');
+  assert.match(html, /<tr class="audit-row"><td data-label="">(?:[0-9]{4}-)?09-24 20:00/, '审计卡片第一行只有时间，不带字段名');
   assert.match(html, /<td data-label="做了">coupon\.create<\/td>/, '操作前用「做了」连接');
   assert.match(html, /<td data-label="对">coupon 7<\/td>/, '对象前用「对」连接');
   assert.match(html, /<td data-priority="low" data-label="来源 IP">10\.0\.0\.9<\/td>/, '来源 IP 挪到时间那一行右侧；IPv4 短，原样显示不加气泡');
@@ -729,7 +739,7 @@ test('登录页人机验证：配置密钥才渲染组件与第三方脚本，�
 
 test('后台 UI：标题区、面板头部、局部刷新与文案统一', () => {
   const dash = dashboard({ user, csrf: 'csrf-token', flash: null, coupons: [], stats: { valid: 0, used: 0, expiring: 0, recycled: 0 } });
-  assert.match(dash, /<div class="panel-head"><h2>最近核销<\/h2><div class="head-actions"><a class="secondary button" href="\/admin\/redemptions">全部核销记录 →<\/a><\/div><\/div>/, '面板动作统一放标题行右侧');
+  assert.match(dash, /<h2>最近核销<\/h2>[\s\S]{0,400}?<div class="head-actions"><a class="secondary button" href="\/admin\/redemptions">全部核销记录 →<\/a><\/div><\/div>/, '面板动作统一放标题行右侧（❓ 说明排在动作之前）');
   assert.match(dash, /<div class="page-title"><h1>概览<\/h1><p>时间均为北京时间<\/p><\/div>/, '标题与小字同行（同一行结构）');
 
   const redemptions = redemptionsPage({ user, csrf: 'csrf-token', flash: null, coupons: [], rows: [], total: 0, page: 1, pages: 1, filters: {} });
@@ -881,6 +891,9 @@ test('细节修正：登录卡片宽度、页脚单行、面板不出内部滚�
   assert.match(css, /\.admin-body \.panel tr\.audit-row>td\[data-label="来源 IP"\]\{display:flex;position:absolute;right:12px;top:10px/, '来源 IP 提到时间那一行右侧：绝对定位不参与换行，并明确 display 提回可见（本档通用规则里它是隐藏的）');
   assert.match(css, /\.audit-ip:hover::after,\.audit-ip:focus::after\{opacity:1;visibility:visible\}/, '长 IP：点按（focus）或悬浮弹完整值');
   assert.match(css, /\.admin-body \.panel tr\.audit-row>td:first-child\{flex:1 1 100%;color:var\(--muted\)/, '时间占满第一行（basis 100% 才能把句子挤到第二行），右侧空位让给来源 IP');
+  assert.match(css, /\.admin-body \.panel tr\.record-row>td\[data-label="券面"\],[\s\S]{0,140}\{order:3;flex:1 1 100%;display:flex;align-items:baseline/, '核销卡片的券面/券码各自整行占位：位置不受名字长短与备注有无影响');
+  assert.ok(!css.includes('.rec-lbl'), '卡片里不写死字段标签，说明改由右上角 ❓ 承担');
+  assert.match(css, /code\.expired\{color:var\(--muted\);border-color:var\(--bad\)\}/, '过期确认码：字变灰、外框描红');
   assert.match(app, /setFlag\(navShell, 'data-fade-right', scrollable && topNav\.scrollLeft \+ topNav\.clientWidth < topNav\.scrollWidth - 1\)/, 'app.js 按滚动位置切换提示，标记挂在外层（好让 CSS 用后代选择器过渡）');
   assert.match(app, /topNav\.scrollBy\(\{ left: direction \* Math\.round\(topNav\.clientWidth \* 0\.6\), behavior: 'smooth' \}\)/, '点两侧小三角往对应方向滚一屏的六成（原来是纯装饰，点击会穿透到被盖住的导航项）');
   assert.ok(!/\.topbar nav\[data-fade/.test(css), '提示不再用挂在 nav 上的 mask 写法（它无法过渡，切换时是突变）');
@@ -966,6 +979,20 @@ test('末批细节：页脚单行自适应、按钮与胶囊尺寸、回收站�
   assert.match(detail, /<small><code>cd-AbCdEfGh1234<\/code>/, '券码列表副标题的 ID 用等宽胶囊');
   const code = codeDetail({ user, csrf: 'csrf-token', flash: null, code: codeOf(), redemptions: [] });
   assert.match(code, /<p>属于「券」· x · <span class="badge/, '券码详情副标题不再重复 ID（只在券码信息里显示）');
+});
+
+test('日期年份规则：记录类过去 9 个月内省略年份，有效期类始终带年份', () => {
+  const shift = (months) => { const d = new Date(); d.setMonth(d.getMonth() + months); return d; };
+  assert.match(beijingTime(shift(-8)), /^[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$/, '9 个月以内的记录时间戳省略年份');
+  assert.match(beijingTime(shift(-10)), /^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$/, '超过 9 个月的记录时间戳保留年份');
+  assert.match(beijingTime(shift(3)), /^[0-9]{4}-[0-9]{2}-[0-9]{2} /, '未来时间不属于记录类，保留年份');
+
+  const soon = shift(2).toISOString().slice(0, 10);
+  const soonHtml = couponsPage({ user, csrf: 'csrf-token', flash: null, coupons: [{ id: 1, name: 'A', offer_text: 'x', max_uses: 1, code_total: 1, code_available: 1, used_total: 0, current_state: 'valid', starts_on: null, expires_on: soon }] });
+  assert.ok(soonHtml.includes(soon), '有效期类（两个月后到期）也带年份');
+  const past = shift(-1).toISOString().slice(0, 10);
+  const pastHtml = couponsPage({ user, csrf: 'csrf-token', flash: null, coupons: [{ id: 1, name: 'A', offer_text: 'x', max_uses: 1, code_total: 1, code_available: 1, used_total: 0, current_state: 'valid', starts_on: past, expires_on: null }] });
+  assert.ok(pastHtml.includes(past), '一个月前的有效期同样带年份（有效期类不走记录类规则）');
 });
 
 test('后台可安装为 PWA：manifest、图标与状态栏配色', () => {

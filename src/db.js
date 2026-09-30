@@ -105,7 +105,7 @@ export function createDb(config) {
     redemptionsByCoupon: db.prepare(`SELECT r.*, v.name AS code_name, v.note AS code_note FROM redemptions r LEFT JOIN voucher_codes v ON v.id = r.code_id WHERE r.coupon_id = ? ORDER BY r.redeemed_at DESC LIMIT 50`),
     // 全局核销流水（概览「最近核销」与核销记录总页共用），带券面名与券码名。
     recentRedemptions: db.prepare(`SELECT r.id, r.coupon_id, r.code_id, r.redeemed_at, r.confirmation_code, r.email_status, r.source_ip,
-      c.name AS face_name, v.name AS code_name, v.note AS code_note
+      c.name AS face_name, c.offer_text, v.name AS code_name, v.note AS code_note
       FROM redemptions r LEFT JOIN coupons c ON c.id = r.coupon_id LEFT JOIN voucher_codes v ON v.id = r.code_id
       ORDER BY r.redeemed_at DESC, r.id DESC LIMIT ?`),
     // 公开核销凭证查询：只挑展示必需的字段，绝不带来源 IP、User-Agent、备注等后台信息。
@@ -447,7 +447,7 @@ export function createDb(config) {
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const base = 'FROM redemptions r LEFT JOIN coupons c ON c.id = r.coupon_id LEFT JOIN voucher_codes v ON v.id = r.code_id';
     const select = `SELECT r.id, r.coupon_id, r.code_id, r.redeemed_at, r.confirmation_code, r.email_status, r.source_ip,
-      c.name AS face_name, v.name AS code_name, v.note AS code_note ${base} ${clause}`;
+      c.name AS face_name, c.offer_text, v.name AS code_name, v.note AS code_note ${base} ${clause}`;
     const rows = db.prepare(`${select} ORDER BY r.redeemed_at DESC, r.id DESC LIMIT ? OFFSET ?`).all(...params, limit, offset);
     const total = db.prepare(`SELECT COUNT(*) AS n ${base} ${clause}`).get(...params).n;
     return { rows, total };
