@@ -204,10 +204,11 @@ test('券码详情：二维码、复制链接、PNG 与单独状态操作', () =
   assert.match(html, /class="back-arrow" href="\/admin\/coupons\/7"/, '要能返回所属券面');
   assert.match(html, /<h1>张三的券<\/h1>/, '标题用券码名称');
   assert.match(html, /<code>cd-AbCdEfGh1234<\/code>/, '页面要显示券码 ID');
-  assert.match(html, /<dt>券码名显示<\/dt><dd>跟随全局设置<\/dd>/, '默认展示跟随全局');
+  assert.match(html, /<dt>券码名显示<\/dt><dd><form method="post" action="\/admin\/codes\/cd-AbCdEfGh1234\/name" class="details-form">[\s\S]{0,400}?<select name="show_name" aria-label="券码名显示" data-autosubmit>/, '「券码名显示」的下拉直接放在原来显示值的那一行（下拉本身就是当前状态）');
+  assert.ok(!/<label>券码名显示/.test(html), '表单里不再重复这个下拉');
   assert.match(html, /name="show_name"[\s\S]{0,160}value="" selected/, '改名表单带显示覆写下拉，默认跟随全局');
   const hiddenCode = codeDetail({ user, code: codeOf({ show_name: 0 }), redemptions: [], csrf: 'csrf-token', flash: null });
-  assert.match(hiddenCode, /<dt>券码名显示<\/dt><dd>始终隐藏<\/dd>/);
+  assert.match(hiddenCode, /<dt>券码名显示<\/dt><dd><form[\s\S]{0,400}?<option value="0" selected>始终隐藏<\/option>/, '覆写为始终隐藏时，详情行里的下拉回显选中');
   assert.match(hiddenCode, /value="0" selected>始终隐藏/);
   assert.match(html, /src="\/admin\/codes\/cd-AbCdEfGh1234\/qrcode"/, '二维码按券码生成');
   assert.ok(!html.includes('data-copy-link'), '券码详情已移除「复制核销链接」按钮，且不把 Token 写进 HTML');
@@ -777,6 +778,7 @@ test('后台 UI：标题区、面板头部、局部刷新与文案统一', () =>
   assert.match(css, /\.is-busy\{opacity:\.6;pointer-events:none\}/, '刷新请求期间给按钮忙碌态');
 
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(app, /closest\('\[data-autosubmit\]'\)[\s\S]{0,200}?requestSubmit/, '详情行里的下拉改完即提交（它没有保存按钮）');
   assert.match(app, /closest\('\[data-refresh\]'\)/, '刷新按钮走局部更新');
   assert.match(app, /closest\('\[data-popover-toggle\]'\)/, '浮窗按钮走点击委托');
   assert.match(app, /if \(!event\.target\.closest\('\.popover'\)\) closePopovers\(\)/, '点浮窗外收起浮窗');
@@ -866,7 +868,7 @@ test('细节修正：登录卡片宽度、页脚单行、面板不出内部滚�
   const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 
-  assert.match(css, /\.auth-card\{width:100%;max-width:520px/, '登录/初始化卡片补足宽度，电脑上不再过窄');
+  assert.match(css, /\.auth-card\{width:100%;max-width:640px/, '登录/初始化卡片补足宽度：电脑端不再像手机宽度');
   assert.ok(!/\.panel\{padding:14px;overflow-x:auto\}/.test(css), '面板不再设 overflow-x（auto 会连带纵向出现内部滚动）');
   assert.match(css, /\.admin-body \.panel\{overflow:visible\}/, '手机档面板不产生内部滚动');
   assert.match(css, /\.page-head>\.page-title\{[^}]*flex:1 1 0%;min-width:0\}/, '标题块用 0 基准可收缩：长标题不会把按钮挤到下一行（桌面与手机档同理）');
@@ -894,6 +896,8 @@ test('细节修正：登录卡片宽度、页脚单行、面板不出内部滚�
   assert.match(css, /\.admin-body \.panel tr\.audit-row>td:first-child\{flex:1 1 100%;color:var\(--muted\)/, '时间占满第一行（basis 100% 才能把句子挤到第二行），右侧空位让给来源 IP');
   assert.match(css, /\.admin-body \.panel tr\.record-row>td\[data-label="券面"\],[\s\S]{0,140}\{order:3;flex:1 1 100%;display:flex;align-items:baseline/, '核销卡片的券面/券码各自整行占位：位置不受名字长短与备注有无影响');
   assert.ok(!css.includes('.rec-lbl'), '卡片里不写死字段标签，说明改由右上角 ❓ 承担');
+  assert.match(css, /\.details\{display:grid;grid-template-columns:auto minmax\(0,1fr\) auto minmax\(0,1fr\)/, '信息详情改四列：短字段两两并排，桌面端右半边不再空着');
+  assert.match(css, /\.details \.details-form select\{width:100%;max-width:220px/, '详情行里的下拉与表单字段同一外观');
   assert.match(css, /\.tip \.tip-body code\{background:none;border:0;padding:0/, '❓ 里的示例值（如 #01）不再背成页面胶囊样式');
   assert.match(css, /code\.expired\{color:var\(--muted\);border-color:var\(--bad\)\}/, '过期确认码：字变灰、外框描红');
   assert.match(app, /setFlag\(navShell, 'data-fade-right', scrollable && topNav\.scrollLeft \+ topNav\.clientWidth < topNav\.scrollWidth - 1\)/, 'app.js 按滚动位置切换提示，标记挂在外层（好让 CSS 用后代选择器过渡）');

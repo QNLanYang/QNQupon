@@ -149,6 +149,16 @@ document.addEventListener('click', (event) => {
 });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closePopovers(); });
 
+// ---- 详情行里的下拉（券码名显示）：改完即提交 ----
+// 它放在 <dl> 里的一个小表单中，没有「保存」按钮，所以靠这里补一次提交；提交本身仍走
+// 上面那套普通 POST（后台页会被局部刷新、并弹出反馈卡片）。
+document.addEventListener('change', (event) => {
+  const el = event.target instanceof HTMLElement ? event.target.closest('[data-autosubmit]') : null;
+  if (!el || !el.form) return;
+  if (typeof el.form.requestSubmit === 'function') el.form.requestSubmit();
+  else el.form.submit();
+});
+
 // ---- 顶栏导航横向滑动：没显示全的那一侧淡出 + 小三角，提示「还有内容」 ----
 const topNav = document.querySelector('.topbar nav');
 if (topNav) {
