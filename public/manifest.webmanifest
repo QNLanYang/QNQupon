@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "QNQupon 券能行",
+  "short_name": "券能行",
+  "description": "自托管不记名优惠券系统：扫码核销、确认码防伪、券面与券码管理。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "/admin",
+  "scope": "/admin",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "prefer_related_applications": false,
+  "background_color": "#fff4df",
+  "theme_color": "#172033",
+  "icons": [
+    { "src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

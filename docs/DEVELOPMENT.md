@@ -120,5 +120,6 @@ docs/               架构 / 部署 / 开发文档与 Nginx 示例配置
 - **后台面板的说明统一走右上角 ❓**（`.tip` 气泡，纯 CSS 零 JS）：面板常驻文案不超过一行，只保留「不看会做错」的口径与联动；字段示例写进 placeholder，不塞进标签括号
 - **次要操作收进浮窗**（`.popover-wrap` + `[data-popover-toggle]` + `aria-controls`，`app.js` 统一开合）：平时收起不占版面，展开时 `app.js` 会后挂一层 40% 黑遮罩（点遮罩/浮窗外或 Esc 收起，局部刷新换页后自动收回），并只补竖向滚动让浮窗完整可见；浮窗里放普通表单，提交行为不变
 - **标题行右侧的入口链接**（如「优惠券」页的回收站）：标题行加 `has-title-link` 类，手机档标题改 `flex:0 1 auto`、链接后面放一个空的 `.title-gap` 吸收空档——否则标题会被挤成竖排，或链接紧贴到按钮上
+- **装到桌面（PWA）只在后台页启用**：manifest 由 `shell()` 的 `admin` 分支输出（`public/manifest.webmanifest`，`scope:"/admin"`、`start_url:"/admin"`），公开页一律不挂，免得"装上打开的是后台"；`theme.js` 顺带同步 `<meta name="theme-color">`（浅 `#172033` / 深 `#0e121b`），所以它必须排在 `pwaHead` 之后。Service Worker 只许做**透传**：`public/sw.js` 由根路径 `/sw.js` 提供（`/assets/` 下的脚本默认拿不到 `/admin` 作用域），注册 scope 与 manifest 保持一致；它是给「仍要求 SW 才给安装」的手机浏览器（实测鸿蒙 4.x 的 Edge、华为浏览器）用的，**里面不许出现 `caches.*`**——后台要看实时数据，测试里有断言守着。图标在 `public/`（`icon-192.png`、`icon-512.png`、`icon-maskable-512.png`、`apple-touch-icon.png`），图形沿用 favicon 的 viewBox 64 比例，maskable 那张要把图形缩到约 62% 才落在安全区内
 - 危险操作必须走页面内模态确认（`data-confirm`），不用 `window.confirm`
 - GET 请求不得改变状态；核销等写操作用条件 UPDATE 的 `changes` 判成败

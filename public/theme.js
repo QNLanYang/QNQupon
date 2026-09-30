@@ -3,11 +3,14 @@
 // 主题：未主动选择过 = 跟随系统（不写 data-theme，交回 prefers-color-scheme）；主动选择过 = 记住浅色/深色。
 // 切换入口是单个图标按钮（[data-theme-cycle]）：点一下在浅色/深色之间换，不做下拉、不摆多个按钮。
 // 只认「主动选过」的两种值，"system" 是旧实现的遗留写法，按未选择处理。
-// 同步加载于 <head>，在首次渲染前把 data-theme 落到 html 上，避免主题闪烁。
+// 同步加载于 <head>，在首次渲染前把 data-theme 落到 html 上，避免主题闪烁；顺手同步 <meta name="theme-color">
+// （浏览器 UI 与 PWA 独立窗口的状态栏颜色），所以这个脚本必须排在 pwaHead 之后。
 (function () {
   var KEY = 'qnqupon-theme';
   var CHOSEN = { light: 1, dark: 1 };
   var LABEL = { light: '浅色', dark: '深色' };
+  // 浏览器 UI / PWA 独立窗口的状态栏颜色：与顶栏同色（浅 #172033、深 #0e121b）
+  var THEME_COLOR = { light: '#172033', dark: '#0e121b' };
   var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
   function chosen() {
@@ -24,6 +27,9 @@
     var el = document.documentElement;
     if (v) el.setAttribute('data-theme', v);
     else el.removeAttribute('data-theme');
+    // 状态栏/浏览器 UI 颜色跟着当前主题走（只在有 <meta name="theme-color"> 的后台页存在）
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', THEME_COLOR[effective()] || THEME_COLOR.light);
     // 图标显形由 CSS 按 data-theme + prefers-color-scheme 决定，这里只同步无障碍文案
     var label = (chosen() ? '主题：' + LABEL[effective()] : '主题：跟随系统（' + LABEL[effective()] + '）') + '（点击切换）';
     var bs = document.querySelectorAll('[data-theme-cycle]');

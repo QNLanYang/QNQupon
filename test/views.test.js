@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { login, publicCoupon, usersPage, presetsPage, couponDetail, codeDetail, forbidden, couponsPage, recyclePage, dashboard, couponForm, profilePage, verifyPage, rateLimited, settingsPage, redemptionsPage, auditPage, home } from '../src/views.js';
 
 const faceOf = (over = {}) => ({
@@ -926,5 +926,60 @@ test('末批细节：页脚单行自适应、按钮与胶囊尺寸、回收站�
   assert.match(detail, /<small><code>cd-AbCdEfGh1234<\/code>/, '券码列表副标题的 ID 用等宽胶囊');
   const code = codeDetail({ user, csrf: 'csrf-token', flash: null, code: codeOf(), redemptions: [] });
   assert.match(code, /<p>属于「券」· x · <span class="badge/, '券码详情副标题不再重复 ID（只在券码信息里显示）');
+});
+
+test('后台可安装为 PWA：manifest、图标与状态栏配色', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8'));
+  assert.equal(manifest.start_url, '/admin', '装出来的 App 直接进后台');
+  assert.equal(manifest.scope, '/admin', '作用域只到后台：公开页仍归浏览器');
+  assert.ok(manifest.start_url.startsWith(manifest.scope), 'start_url 必须落在 scope 内，否则 manifest 会被判无效');
+  assert.equal(manifest.display, 'standalone', '独立窗口：没有地址栏与浏览器工具栏');
+  assert.equal(manifest.prefer_related_applications, false);
+  assert.ok(manifest.name && manifest.short_name, '要有 name 与 short_name');
+  assert.ok(manifest.icons.some((i) => i.sizes === '192x192') && manifest.icons.some((i) => i.sizes === '512x512'), 'Chrome 的安装条件要求 192 与 512 图标');
+  assert.ok(manifest.icons.some((i) => i.purpose === 'maskable'), 'Android 启动器要一张 maskable 图标');
+
+  // 图标存在且像素尺寸与声明一致（直接读 PNG 的 IHDR，零依赖）
+  const pngSize = (file) => {
+    const buf = readFileSync(new URL(`../public/${file}`, import.meta.url));
+    assert.equal(buf.toString('ascii', 1, 4), 'PNG', `${file} 是 PNG`);
+    return `${buf.readUInt32BE(16)}x${buf.readUInt32BE(20)}`;
+  };
+  assert.equal(pngSize('icon-192.png'), '192x192');
+  assert.equal(pngSize('icon-512.png'), '512x512');
+  assert.equal(pngSize('icon-maskable-512.png'), '512x512');
+  assert.equal(pngSize('apple-touch-icon.png'), '180x180');
+  for (const icon of manifest.icons) {
+    assert.ok(existsSync(new URL(`../public/${icon.src.split('/').pop()}`, import.meta.url)), `${icon.src} 必须在 public/ 下（经 /assets/ 前缀提供）`);
+  }
+
+  // manifest 只挂后台页：公开页不该出现「安装」，否则装上打开的是后台，语义错乱
+  const adminHtml = dashboard({ user, csrf: 'csrf-token', flash: null, coupons: [], stats: { valid: 0, used: 0, expiring: 0, recycled: 0 } });
+  assert.match(adminHtml, /<link rel="manifest" href="\/assets\/manifest\.webmanifest">/, '后台页挂 manifest');
+  assert.match(adminHtml, /<link rel="apple-touch-icon" sizes="180x180" href="\/assets\/apple-touch-icon\.png">/, 'iOS 主屏图标');
+  assert.match(adminHtml, /<meta name="theme-color" content="#172033">/, '留好 theme-color 给 theme.js 改写');
+  assert.match(adminHtml, /<meta name="apple-mobile-web-app-title" content="券能行">/, 'iOS 主屏名称与图标名一致');
+  assert.ok(!home().includes('rel="manifest"'), '公开页不挂 manifest');
+  assert.ok(!verifyPage({}).includes('rel="manifest"'), '查询页同样不挂');
+
+  // Service Worker：只为了让手机浏览器认可「可安装」，刻意零缓存（后台要看实时数据）
+  const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  assert.match(sw, /self\.addEventListener\('fetch'/, 'SW 要有 fetch 处理器（部分手机浏览器据此判定可安装）');
+  assert.match(sw, /event\.respondWith\(fetch\(event\.request\)\)/, 'SW 的 fetch 只做透传');
+  // 注释里为了说明可以提 API 名，所以先去掉注释再查
+  const swCode = sw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.ok(!/caches|cache\.put|cache\.add|CacheStorage/i.test(swCode), 'SW 代码里不许出现任何缓存 API（否则会给后台留下过期数据）');
+  const appJs = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(appJs, /serviceWorker\.register\('\/sw\.js', \{ scope: '\/admin', updateViaCache: 'none' \}\)/, '后台页注册 SW，作用域与 manifest 的 scope 一致');
+  assert.match(appJs, /classList\.contains\('admin-body'\) && 'serviceWorker' in navigator/, '只在后台页、且是安全上下文时才注册（内网 http 自动跳过）');
+  const serverJs = readFileSync(new URL('../src/server.js', import.meta.url), 'utf8');
+  assert.match(serverJs, /app\.get\('\/sw\.js'/, 'SW 必须由根路径提供（/assets/ 下的脚本默认拿不到 /admin 这个 scope）');
+  assert.match(serverJs, /\.header\('Service-Worker-Allowed', '\/'\)/, '放行根作用域');
+  assert.match(serverJs, /app\.get\('\/sw\.js'[\s\S]{0,240}Cache-Control', 'no-store'/, 'SW 响应 no-store，改完尽快生效');
+
+  // 状态栏颜色跟随主题，与顶栏同色
+  const themeJs = readFileSync(new URL('../public/theme.js', import.meta.url), 'utf8');
+  assert.match(themeJs, /THEME_COLOR = \{ light: '#172033', dark: '#0e121b' \}/, '状态栏配色与顶栏一致');
+  assert.match(themeJs, /meta\.setAttribute\('content', THEME_COLOR\[effective\(\)\] \|\| THEME_COLOR\.light\)/, '切换主题时同步 theme-color');
 });
 

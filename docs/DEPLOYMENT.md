@@ -89,16 +89,31 @@ proxy_set_header Host $host;                     # 透传 Host，否则应用的
 proxy_set_header X-Forwarded-For $remote_addr;
 ```
 
-管理入口需要 TLS，自签即可（浏览器会警告，内部使用可接受）：
+管理入口需要 TLS。**证书还必须被访问它的设备信任**：走公网域名（Cloudflare / Let's Encrypt 等）时自然满足；纯内网自签则要把这张证书装成手机的受信任 CA——否则不只是浏览器告警，「装到桌面」也会装不上（PWA 只在 HTTPS 且证书有效时可安装）：
 
 ```bash
 openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-  -keyout admin.example.com.key -out admin.example.com.crt -subj "/CN=admin.example.com"
+  -keyout admin.example.com.key -out admin.example.com.crt \
+  -subj "/CN=admin.example.com" -addext "subjectAltName=DNS:admin.example.com,IP:192.168.66.66"
 ```
+
+自签证书的 SAN 要含**实际访问用的地址**（现代浏览器不再看 CN，只认 SAN）。手机安装 CA：HarmonyOS「设置 → 安全 → 更多安全设置 → 加密和凭据 → 从存储设备安装 → CA 证书」（需先设锁屏密码）；iOS 把证书传到手机 →「设置 → 通用 → VPN与设备管理 → 安装描述文件」→ 再到「设置 → 通用 → 关于本机 → 证书信任设置」打开完全信任。
 
 Nginx 侧建议同时：`server_tokens off;`、`limit_req` 粗限流（示例已含）、`proxy_hide_header Server;`、`client_max_body_size 1m;`。
 
 请求体上限 `client_max_body_size` 保持 nginx 默认 1m 即可：应用表单最大约 20KB、应用自身上限 32KB。若在别处（`http` 块或其它 include）配了更小的值，提交创建券面会**先撞 nginx 自带的英文 413 页**、请求根本到不了应用——用 `nginx -T` 查最终生效的 `client_max_body_size`，改回 `1m` 后 reload。
+
+## 装到桌面（PWA）
+
+后台可以装成手机上的独立 App：**没有地址栏与浏览器工具栏**，桌面图标名「券能行」。
+
+1. 手机浏览器打开后台（HTTPS 且证书被信任，见上）并登录；
+2. 浏览器菜单 → **安装应用 / 添加到主屏幕**；
+3. 之后从桌面图标进入，直接是后台。
+
+Chrome 从 108（Android）/ 112（桌面）起只需 manifest 即可安装，但**部分手机浏览器仍要求「注册了一个带 fetch 的 Service Worker」**——实测鸿蒙 4.x 的 Edge 与华为浏览器都是这样，光有 manifest 只能建快捷方式。因此后台注册了一个 **只透传、不缓存** 的 Service Worker（由根路径 `/sw.js` 提供）：它不调用任何缓存 API，请求一律放行到网络，后台永远看实时数据，静态资源继续走 `max-age=0` + ETag 回源校验。改这个文件后建议在浏览器里手动更新一次再测（SW 脚本默认可能拖到 24 小时才检查更新）。
+
+作用域只到 `/admin`：客人核销页 `/r/…` 与查询页 `/verify` 仍归浏览器打开，两条线不混（后台里点「核销页」也会交给浏览器）。登录态方面，Android 的 App 与浏览器基本共享，**iOS 的会话与 localStorage 是分开的**（要重新登录一次、主题选择各自独立）。
 
 ## 对外暴露（任选）
 

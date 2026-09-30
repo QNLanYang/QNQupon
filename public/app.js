@@ -163,6 +163,15 @@ if (topNav) {
   syncNavFade();
 }
 
+// ---- 装到桌面：注册 Service Worker（只透传、不缓存，见 public/sw.js 顶部说明）----
+// 实测鸿蒙 4.x 的 Edge 与华为浏览器仍要求「注册了一个带 fetch 的 SW」才给安装，光有 manifest 只能建快捷方式；
+// 桌面 Chrome/Edge 早已放宽到只认 manifest，多这一个 SW 对它们没有副作用（它不缓存任何东西）。
+// 非安全上下文（例如 http://192.168.66.66:3100）没有 navigator.serviceWorker，这里自然跳过。
+if (document.body.classList.contains('admin-body') && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js', { scope: '/admin', updateViaCache: 'none' })
+    .catch(() => { /* 浏览器不支持或被策略拒绝：忽略，页面功能不受影响，最多不出现安装入口 */ });
+}
+
 // 日期输入：一律用原生 type="date"，脚本零接管——实测（鸿蒙 ArkWeb）由脚本在聚焦时切换 type
 // 会引发首点不弹日历、二次点击框闪烁且值提交不上（本地三组对照页实测；对照组脚本在 temp/ 不入库）。
 

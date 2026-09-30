@@ -8,7 +8,7 @@ import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
-import { mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import QRCode from 'qrcode';
 import { config } from './config.js';
 import { createDb } from './db.js';
@@ -59,6 +59,15 @@ await app.register(rateLimit, {
   )
 });
 await app.register(fastifyStatic, { root: join(process.cwd(), 'public'), prefix: '/assets/' });
+
+// Service Worker：必须由根路径提供，才能拿到 /admin 这个 scope（/assets/ 下的脚本默认只能控 /assets/）。
+// 响应 no-store：改了这个文件要尽快生效，别被中间层或浏览器拖 24 小时。
+// 它只做透传、不缓存任何东西，理由见 public/sw.js 顶部说明——后台要看实时数据。
+app.get('/sw.js', async (request, reply) => reply
+  .type('application/javascript; charset=utf-8')
+  .header('Cache-Control', 'no-store')
+  .header('Service-Worker-Allowed', '/')
+  .send(readFileSync(join(process.cwd(), 'public', 'sw.js'), 'utf8')));
 
 // 安全响应头：应用层统一下发，无论从哪个入口访问都走同一条代码路径，可进测试断言。
 // 严格 CSP：脚本/样式/图片/接口只准来自本站，禁止内联脚本与外站资源。
