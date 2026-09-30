@@ -897,7 +897,7 @@ test('细节修正：登录卡片宽度、页脚单行、面板不出内部滚�
   assert.match(css, /\.admin-body \.panel tr\.record-row>td\[data-label="券面"\],[\s\S]{0,140}\{order:3;flex:1 1 100%;display:flex;align-items:baseline/, '核销卡片的券面/券码各自整行占位：位置不受名字长短与备注有无影响');
   assert.ok(!css.includes('.rec-lbl'), '卡片里不写死字段标签，说明改由右上角 ❓ 承担');
   assert.match(css, /\.details\{display:grid;grid-template-columns:auto minmax\(0,1fr\) auto minmax\(0,1fr\)/, '信息详情改四列：短字段两两并排，桌面端右半边不再空着');
-  assert.match(css, /\.details \.details-form select\{width:100%;max-width:220px/, '详情行里的下拉与表单字段同一外观');
+  assert.match(css, /\.details \.details-form select\{width:auto;max-width:100%;margin:0;padding:1px 6px/, '详情行里的下拉是行内控件：宽度跟内容走、高度贴近一行文字');
   assert.match(css, /\.tip \.tip-body code\{background:none;border:0;padding:0/, '❓ 里的示例值（如 #01）不再背成页面胶囊样式');
   assert.match(css, /code\.expired\{color:var\(--muted\);border-color:var\(--bad\)\}/, '过期确认码：字变灰、外框描红');
   assert.match(app, /setFlag\(navShell, 'data-fade-right', scrollable && topNav\.scrollLeft \+ topNav\.clientWidth < topNav\.scrollWidth - 1\)/, 'app.js 按滚动位置切换提示，标记挂在外层（好让 CSS 用后代选择器过渡）');
