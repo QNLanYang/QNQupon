@@ -726,7 +726,7 @@ test('后台 UI：标题区、面板头部、局部刷新与文案统一', () =>
 
   const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
   assert.match(css, /\.page-head>\.page-title\{display:flex;align-items:baseline/, '标题与小字基线对齐、同行显示');
-  assert.match(css, /\.back-arrow\{display:inline-flex/, '返回是标题左侧的箭头，取代整块返回按钮');
+  assert.match(css, /\.back-arrow\{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;margin-right:-4px/, '返回箭头收窄（24px 盒 + 18px 图标，并收紧与标题的间距）');
   assert.match(css, /\.back-arrow:hover\{color:var\(--ink\)/, '悬浮时颜色变深');
   assert.match(css, /\.code-create label\.count-field\{flex:0 0 120px\}/, '生成数量输入框收窄，不再占满整行');
   assert.match(css, /\.panel-head\{display:flex;align-items:center/, '面板头部为一行布局');
@@ -847,6 +847,8 @@ test('手机按钮收紧、设置页双列与开关、账号页与测试邮件',
   assert.match(css, /\.qr-preview \.actions\{display:flex;flex-direction:column;gap:8px;align-items:stretch/, '打开/下载/预览按钮竖排在二维码右边');
   assert.match(css, /code\{font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;font-size:\.92em;letter-spacing:\.08em;background:var\(--code-bg\);border:1px solid var\(--code-border-sm\);border-radius:999px/, '确认码/券码 ID 用等宽胶囊包裹、字距略放宽');
   assert.match(css, /\.admin-body \.panel td\.row-ops\{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end/, '手机档操作按钮靠右');
+  assert.match(css, /\.mail\{display:inline-flex;align-items:center;gap:6px;vertical-align:middle\}/, '邮件图标与同行文字垂直居中');
+  assert.match(css, /\.admin-body \.panel tr\.record-row>td\[data-label="邮件"\]\{order:1;flex:0 0 auto;display:flex;align-items:center\}/, '核销记录里邮件单元格内容垂直居中');
   assert.match(css, /\.admin-body \.qr-preview\{gap:12px\}/, '手机档二维码与按钮列间距收紧（不换行）');
   assert.match(css, /\.admin-body \.qr-links\{min-width:0;flex:1 1 auto\}/, '手机档按钮列留在二维码右边');
   assert.match(css, /\.danger-row\{justify-content:flex-end\}/, '手机档停用/删除靠右');
