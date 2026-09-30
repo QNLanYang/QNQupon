@@ -119,7 +119,7 @@ test('账号页对当前账号与超管隐藏危险操作', () => {
     { id: 3, username: 'biz-off', role: 'business_admin', active: 0, last_login_at: null }
   ], csrf: 'csrf-token', flash: null });
   assert.match(html, /当前账号/);
-  const selfRow = html.match(/<tr><td>superadmin[\s\S]*?<\/tr>/)[0];
+  const selfRow = html.match(/<tr><td data-label="用户名">superadmin[\s\S]*?<\/tr>/)[0];
   assert.ok(!selfRow.includes('/active'), '不能对自己停用');
   assert.ok(!selfRow.includes('/password'), '不能在账号页重置自己密码');
   assert.match(html, />启用<\/button>/, '停用账号应显示“启用”按钮');
@@ -212,7 +212,7 @@ test('券码详情：二维码、复制链接、PNG 与单独状态操作', () =
   assert.match(html, /name="return" value="\/admin\/codes\/cd-AbCdEfGh1234"/, '状态操作送回原页，不再跳转');
   assert.match(html, /action="\/admin\/codes\/cd-AbCdEfGh1234\/name"/, '可改券码名称');
   assert.match(html, /action="\/admin\/codes\/cd-AbCdEfGh1234\/note"/, '可单独改备注');
-  assert.match(html, /已核销<\/dt><dd>1 \/ 3 次（剩余 2 次）/);
+  assert.match(html, /已核销<\/dt><dd class="wide">1 \/ 3 次（剩余 2 次）/, '已核销在手机档独占一行（.wide）');
   assert.ok(!html.includes('/r/'), '后台页面不应直接暴露 Token 链接');
 
   const recycled = codeDetail({ user, code: codeOf({ status: 'recycled', current_state: 'recycled' }), redemptions: [], csrf: 'csrf-token', flash: null });
@@ -532,7 +532,7 @@ test('主题开关：单图标浅色/深色切换、页脚贴底与 theme.js 前
   // 页脚贴底：内容不足一屏贴到窗口底部，超出时落在内容末尾（滚动可见）
   assert.match(css, /body\{margin:0;min-height:100vh;display:flex;flex-direction:column/, '页面为 100vh 弹性列，页脚 y 上限＝窗口高－页脚高');
   assert.match(css, /\.container\{width:100%;max-width:1180px;margin:0 auto;padding:34px 22px 0;flex:1 0 auto;display:flex;flex-direction:column;row-gap:34px\}/, '主容器撑满剩余高度，模块间距交给 row-gap');
-  assert.match(css, /\.site-footer\{margin-top:auto;padding:16px 0 22px/, '页脚靠 auto 上边距贴到内容之后或窗口底，底边与窗口齐平');
+  assert.match(css, /\.site-footer\{margin-top:auto;padding:16px 4px 22px;border-top:1px solid var\(--line\);text-align:center;font-size:12px/, '页脚靠 auto 上边距贴底；字号 12px 以便单行');
 });
 
 test('核销二次确认：标题与提示可由页面指定', () => {
@@ -686,7 +686,7 @@ test('全站页脚：版权与源码链接覆盖公开页、登录页与后台�
     ['后台页', presetsPage({ user, presets: [], csrf: 'csrf-token', flash: null })]
   ];
   for (const [name, html] of pages) {
-    assert.ok(html.includes('© 2026 QNLanYang (全能岚漾)'), `${name} 含版权行`);
+    assert.ok(html.includes('© 2026 QNLanYang ·'), `${name} 含版权行`);
     assert.ok(html.includes('https://github.com/QNLanYang/QNQupon'), `${name} 含源码链接`);
     assert.ok(html.includes('site-footer'), `${name} 含页脚元素`);
   }
@@ -743,3 +743,78 @@ test('状态操作回到来源页：服务端只接受同源后台 return', () =
   assert.match(server, /A-Za-z0-9\/_-\]\*\$\//, '只接受同源后台路径，防开放重定向');
   assert.match(server, /returnPath\(request, status === 'recycled'/, '移入回收站等状态操作回原页');
 });
+
+test('手机档：顶栏折叠菜单、表格卡片化与单列表单', () => {
+  // 顶栏结构：图标品牌 + 折叠菜单（主题/个人账号/退出）
+  const admin = dashboard({ user, csrf: 'csrf-token', flash: null, coupons: [], stats: { valid: 0, used: 0, expiring: 0, recycled: 0 } });
+  assert.match(admin, /<span class="brand-text">/, '品牌文字包起来，手机档只留图标');
+  assert.match(admin, /<div class="topbar-side" data-side><button class="icon-button menu-toggle" type="button" data-menu-toggle aria-label="菜单" aria-expanded="false">/, '折叠菜单入口');
+  assert.match(admin, /<div class="side-panel">/, '菜单面板容器');
+  assert.match(admin, /<span class="side-text">界面主题<\/span>/, '菜单里有主题行');
+  assert.match(admin, /<span class="side-text">个人账号<\/span>/, '菜单里有个人账号行');
+  assert.match(admin, /<span class="side-text">退出<\/span>/, '菜单里退出带文字');
+  assert.ok(admin.indexOf('data-theme-cycle') < admin.indexOf('class="who"'), '主题仍在用户名之前（桌面顺序不变）');
+
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.match(app, /document\.querySelector\('\[data-menu-toggle\]'\)/, 'app.js 接管折叠菜单');
+  assert.match(app, /sideWrap\.contains\(event\.target\)\) setMenu\(false\)/, '点菜单外部收起');
+  assert.match(app, /if \(event\.key === 'Escape'\) setMenu\(false\)/, 'Esc 收起菜单');
+
+  const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
+  assert.match(css, /@media\(max-width:640px\)\{/, '新增手机档断点');
+  assert.match(css, /\.topbar\{flex-wrap:nowrap;gap:10px;min-height:52px;padding:8px 12px\}/, '手机档顶栏压成一行');
+  assert.match(css, /\.brand-text\{display:none\}/, '手机档品牌只留图标');
+  assert.match(css, /\.topbar nav\{order:0;flex:1 1 auto;flex-basis:auto;min-width:0;gap:14px;flex-wrap:nowrap;white-space:nowrap;overflow-x:auto/, '手机档导航单行横向滑动');
+  assert.match(css, /\.topbar-side \.side-panel\{display:none;position:absolute;right:0;top:calc\(100% \+ 8px\)/, '菜单面板在手机上浮层展开');
+  assert.match(css, /\.stats\{grid-template-columns:1fr 1fr\}/, '统计卡手机档 2 列');
+  assert.match(css, /\.details\{grid-template-columns:auto minmax\(0,1fr\) auto minmax\(0,1fr\);gap:8px 14px\}/, '券面/券码信息手机档双列（长字段用 .wide 独占一行）');
+  assert.match(css, /\.admin-body \.panel thead\{display:none\}/, '表格手机档隐藏表头');
+  assert.match(css, /\.admin-body \.panel td\[data-priority="low"\]\{display:none\}/, '次要列手机档隐藏');
+  assert.match(css, /\.admin-body \.panel td:not\(:first-child\):not\(\.row-ops\):not\(\[data-priority="low"\]\):not\(\[data-label="状态"\]\)::before\{content:attr\(data-label\)/, '非首列（状态除外）显示「标签」');
+  assert.match(css, /\.admin-body \.panel td\.row-ops\{display:flex;flex-wrap:wrap/, '操作按钮在卡片底部一行');
+  assert.match(css, /\.admin-body \.panel tr\.empty-row\{border:0/, '空状态不画卡片边框');
+  assert.match(css, /\.admin-body \.panel td\[data-label="状态"\]\{position:absolute;right:10px;top:9px;padding:0\}/, '手机档状态徽章移到卡片右上角');
+  assert.match(css, /\.panel-head \.tip \.tip-body\{left:10px;right:auto;top:32px;width:min\(88%,420px\)\}/, '面板头部的 ❓ 气泡贴着面板展开，不再跑到卡片外');
+  assert.match(css, /\.page-head h1\{font-size:22px;line-height:1.25\}/, '手机档标题字号与行高收紧');
+  assert.match(css, /\.container\{padding-top:12px\}/, '手机档内容上边距收紧');
+  assert.match(css, /\.details dt\.wide\{grid-column:1\/2\}/, '长字段标 wide 后标签与值同行铺满');
+  assert.match(css, /\.admin-body \.table-scroll\{max-height:none;overflow:visible\}/, '手机档取消券码表限高');
+  assert.match(css, /\.row-ops \.button,\.row-ops button,\.inline-form button\{min-height:42px/, '手机档点击目标加高');
+
+  // 各表的单元格都带「标签」，次要列标了 low
+  const recycle = recyclePage({ user, csrf: 'csrf-token', flash: null, faces: [{ id: 3, name: '旧券', offer_text: 'x', recycled_at: '2026-09-24T12:00:00.000Z' }], codes: [] });
+  assert.match(recycle, /<td data-label="优惠券">/, '回收站首列带标签');
+  assert.match(recycle, /<td data-priority="low" data-label="日期">/, '回收站日期标为次要列');
+  assert.equal((recycle.match(/<td>/g) || []).length, 0, '回收站表里不再有裸的 <td>');
+  const audit = auditPage({ user, csrf: 'csrf-token', flash: null, prefixes: [], users: [], logs: [{ created_at: '2026-09-24T12:00:00.000Z', username: 'x', action: 'a', target_type: 't', target_id: 1, source_ip: '1.1.1.1' }], total: 1, page: 1, pages: 1, filters: {} });
+  assert.match(audit, /data-priority="low" data-label="来源 IP"/, '审计页来源 IP 标为次要列');
+  const users = usersPage({ user, csrf: 'csrf-token', flash: null, users: [{ id: 2, username: 'biz', role: 'business_admin', active: 1, last_login_at: null }] });
+  assert.match(users, /data-priority="low" data-label="上次登录"/, '账号页上次登录标为次要列');
+  assert.match(users, /data-label="用户名">biz</, '账号页首列带标签');
+});
+
+test('细节修正：登录卡片宽度、页脚单行、面板不出内部滚动、可点范围与导航淡出', () => {
+  const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+
+  assert.match(css, /\.auth-card\{width:100%;max-width:520px/, '登录/初始化卡片补足宽度，电脑上不再过窄');
+  assert.ok(!/\.panel\{padding:14px;overflow-x:auto\}/.test(css), '面板不再设 overflow-x（auto 会连带纵向出现内部滚动）');
+  assert.match(css, /\.admin-body \.panel\{overflow:visible\}/, '手机档面板不产生内部滚动');
+  assert.match(css, /\.page-head>\.page-title\{[^}]*flex:1 1 auto;min-width:0\}/, '标题块可收缩，按钮尽量留在标题行');
+  assert.ok(!css.includes('.page-head{flex-direction:column}'), '不再强制标题与按钮分成两行');
+  assert.match(css, /\.page-head>\.page-title\{display:contents\}/, '手机档把标题块拆开，副标题可单独占行');
+  assert.match(css, /\.page-head>\.actions\{order:2;margin-left:auto\}/, '手机档按钮留在标题行右侧');
+  assert.match(css, /\.page-head>\.page-title>p\{order:3;flex:1 1 100%;margin:0\}/, '副标题整行排在最后；原来手机上标题/副标题/按钮占三行');
+  assert.match(css, /td a small\{font-weight:400;color:var\(--muted\)\}/, '链接内的次要信息保持灰字不加粗');
+  assert.match(css, /\.admin-body \.panel td:first-child a\{display:block\}/, '首列链接占满单元格，点击范围含次要信息');
+  assert.match(css, /\.topbar nav\[data-fade-right\]\{-webkit-mask-image:linear-gradient\(to left,transparent,#000 20px\)/, '导航右侧未显示全时淡出');
+  assert.match(css, /\.topbar nav\[data-fade-left\]\{-webkit-mask-image:linear-gradient\(to right,transparent,#000 20px\)/, '导航左侧未显示全时淡出');
+  assert.match(app, /setFlag\(topNav, 'data-fade-right', scrollable && topNav\.scrollLeft \+ topNav\.clientWidth < topNav\.scrollWidth - 1\)/, 'app.js 按滚动位置切换淡出');
+
+  // 名称与次要信息同在一个链接里
+  const list = couponsPage({ user, csrf: 'csrf-token', flash: null, coupons: [{ id: 1, name: 'A', offer_text: 'x', max_uses: 1, code_total: 1, code_available: 1, used_total: 0, current_state: 'valid' }] });
+  assert.match(list, /<a href="\/admin\/coupons\/1">A<small>x<\/small><\/a>/, '券面列表：优惠内容在可点范围内');
+  const detail = couponDetail({ user, csrf: 'csrf-token', flash: null, coupon: faceOf(), codes: [codeOf()], redemptions: [] });
+  assert.match(detail, /<a href="\/admin\/codes\/cd-AbCdEfGh1234">张三的券<small>/, '券码列表：券码 ID 在可点范围内');
+});
+

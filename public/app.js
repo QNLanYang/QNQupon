@@ -51,6 +51,39 @@ cancelButton.addEventListener('click', closeModal);
 mask.addEventListener('click', (event) => { if (event.target === mask) closeModal(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !mask.hidden) closeModal(); });
 
+// ---- 顶栏折叠菜单（手机档）：点按钮展开，点外部或 Esc 收起 ----
+const sideWrap = document.querySelector('[data-side]');
+const menuToggle = document.querySelector('[data-menu-toggle]');
+if (sideWrap && menuToggle) {
+  const setMenu = (open) => {
+    if (open) sideWrap.setAttribute('data-open', '');
+    else sideWrap.removeAttribute('data-open');
+    menuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  menuToggle.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setMenu(!sideWrap.hasAttribute('data-open'));
+  });
+  document.addEventListener('click', (event) => {
+    if (sideWrap.hasAttribute('data-open') && !sideWrap.contains(event.target)) setMenu(false);
+  });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') setMenu(false); });
+}
+
+// ---- 顶栏导航横向滑动：没显示全的那一侧淡出，提示「还有内容」 ----
+const topNav = document.querySelector('.topbar nav');
+if (topNav) {
+  const setFlag = (el, name, on) => { if (on) el.setAttribute(name, ''); else el.removeAttribute(name); };
+  const syncNavFade = () => {
+    const scrollable = topNav.scrollWidth > topNav.clientWidth + 1;
+    setFlag(topNav, 'data-fade-left', scrollable && topNav.scrollLeft > 1);
+    setFlag(topNav, 'data-fade-right', scrollable && topNav.scrollLeft + topNav.clientWidth < topNav.scrollWidth - 1);
+  };
+  topNav.addEventListener('scroll', syncNavFade, { passive: true });
+  window.addEventListener('resize', syncNavFade);
+  syncNavFade();
+}
+
 // 日期输入：一律用原生 type="date"，脚本零接管——实测（鸿蒙 ArkWeb）由脚本在聚焦时切换 type
 // 会引发首点不弹日历、二次点击框闪烁且值提交不上（本地三组对照页实测；对照组脚本在 temp/ 不入库）。
 
