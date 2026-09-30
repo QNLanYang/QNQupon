@@ -149,15 +149,24 @@ document.addEventListener('click', (event) => {
 });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closePopovers(); });
 
-// ---- 顶栏导航横向滑动：没显示全的那一侧淡出，提示「还有内容」 ----
+// ---- 顶栏导航横向滑动：没显示全的那一侧淡出 + 小三角，提示「还有内容」 ----
 const topNav = document.querySelector('.topbar nav');
 if (topNav) {
   const setFlag = (el, name, on) => { if (on) el.setAttribute(name, ''); else el.removeAttribute(name); };
+  // 标记挂在 .topbar-nav 上（提示条是它的子节点），CSS 用后代选择器显示并淡入，好加过渡
+  const navShell = topNav.closest('.topbar-nav') || topNav;
   const syncNavFade = () => {
     const scrollable = topNav.scrollWidth > topNav.clientWidth + 1;
-    setFlag(topNav, 'data-fade-left', scrollable && topNav.scrollLeft > 1);
-    setFlag(topNav, 'data-fade-right', scrollable && topNav.scrollLeft + topNav.clientWidth < topNav.scrollWidth - 1);
+    setFlag(navShell, 'data-fade-left', scrollable && topNav.scrollLeft > 1);
+    setFlag(navShell, 'data-fade-right', scrollable && topNav.scrollLeft + topNav.clientWidth < topNav.scrollWidth - 1);
   };
+  // 点两侧的小三角：往对应方向滚一屏的六成（原来是纯装饰且 pointer-events:none，
+  // 点在三角上会落到被遮住的那个导航项上，等于误点链接）
+  for (const [selector, direction] of [['.nav-hint-left', -1], ['.nav-hint-right', 1]]) {
+    navShell.querySelector(selector)?.addEventListener('click', () => {
+      topNav.scrollBy({ left: direction * Math.round(topNav.clientWidth * 0.6), behavior: 'smooth' });
+    });
+  }
   topNav.addEventListener('scroll', syncNavFade, { passive: true });
   window.addEventListener('resize', syncNavFade);
   syncNavFade();

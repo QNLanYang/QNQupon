@@ -133,7 +133,8 @@ test('预设页每条都有编辑/删除动作', () => {
   assert.match(html, /action="\/admin\/presets\/1"/);
   assert.match(html, /formaction="\/admin\/presets\/1\/delete"/);
   assert.match(html, /action="\/admin\/presets\/2"/);
-  assert.match(html, /停用<\/span>/, '停用预设要有徽章');
+  assert.match(html, /<h2>停用店<\/h2><label class="check switch"><input type="checkbox" name="active"[^>]*> 启用<\/label>/, '停用的预设：开关是关着的（不再另放状态徽章）');
+  assert.match(html, /<h2>示例总店<\/h2><label class="check switch"><input type="checkbox" name="active" checked> 启用<\/label>/, '启用的预设：开关是开着的');
   assert.match(html, /name="active"[^>]*>/, '应有启用开关');
   // 停用预设不应出现在券表单的下拉里（由 activePresets 控制）
 });
@@ -588,6 +589,9 @@ test('服务设置页：数据保留策略表单与默认值回退', () => {
   const dirty = settingsPage({ user, csrf: 'csrf-token', flash: null, settings: { recycleDays: 'abc', purgeDays: '9999' } });
   assert.match(dirty, /name="recycleDays"[^>]*value="30"/, '非法存量值回退默认');
   assert.match(dirty, /name="purgeDays"[^>]*value="30"/, '越界存量值回退默认');
+
+  assert.match(html, /<div class="actions"><button class="secondary" type="submit" form="settings-backup">保存备份策略<\/button><button class="danger" type="submit" form="settings-maintenance">立即执行清理与备份<\/button><\/div>/, '「保存备份策略」与「立即执行清理与备份」并到同一行，后者用危险色');
+  assert.ok(!/<button class="secondary">立即执行清理与备份<\/button>/.test(html), '立即执行不再用普通按钮样式');
 });
 
 test('服务设置页：券面展示开关（默认开启、可关闭）', () => {
@@ -649,7 +653,10 @@ test('审计页：筛选表单、分页链接与表格列', () => {
     total: 41, page: 2, pages: 3,
     filters: { action: 'coupon', actor: '2', from: '2026-09-01', to: '' } });
   assert.match(html, /action="\/admin\/audit"/, 'GET 表单，结果 URL 可分享');
-  assert.match(html, /<div class="panel-head"><h2>筛选<\/h2>[\s\S]*?<div class="head-actions"><button class="primary" type="submit">查询<\/button><a class="secondary button" href="\/admin\/audit">重置<\/a><\/div><\/div>/, '筛选的查询/重置进标题行');
+  assert.match(html, /<div class="actions"><div class="popover-wrap"><button type="button" class="secondary" data-popover-toggle aria-expanded="false" aria-controls="audit-filter">筛选<span class="popover-count">3<\/span><\/button>/, '筛选与核销记录统一：收进标题行右侧按钮的浮窗，已选条件数用角标提示');
+  assert.match(html, /<div class="popover" id="audit-filter" hidden><form method="get" action="\/admin\/audit" class="popover-form">/, '浮窗里是原来的 GET 表单，URL 仍可分享');
+  assert.match(html, /<div class="actions"><button class="primary" type="submit">查询<\/button><a class="secondary button" href="\/admin\/audit">重置<\/a><\/div>/, '浮窗里保留查询/重置');
+  assert.ok(!html.includes('<h2>筛选</h2>'), '不再有整块常驻的筛选面板');
   assert.match(html, /method="get"/);
   assert.match(html, /value="coupon" selected/, '类别回显选中');  assert.match(html, /value="2" selected/, '操作人回显选中');
   assert.match(html, /biz（已停用）/, '停用账号在下拉里标注');
@@ -659,6 +666,15 @@ test('审计页：筛选表单、分页链接与表格列', () => {
   assert.match(html, /第 2 \/ 3 页/);
   assert.match(html, /2026-09-24 20:00/, '时间按北京时间');
   assert.match(html, /coupon 7/, '对象列');
+  assert.match(html, /<tr class="audit-row">/, '审计行用独立的卡片布局（时间一行、账号与对象与操作一行）');
+  assert.match(html, /<tr class="audit-row"><td data-label="">2026-09-24 20:00/, '审计卡片第一行只有时间，不带字段名');
+  assert.match(html, /<td data-label="做了">coupon\.create<\/td>/, '操作前用「做了」连接');
+  assert.match(html, /<td data-label="对">coupon 7<\/td>/, '对象前用「对」连接');
+  assert.match(html, /<td data-priority="low" data-label="来源 IP">10\.0\.0\.9<\/td>/, '来源 IP 挪到时间那一行右侧；IPv4 短，原样显示不加气泡');
+
+  const longIp = auditPage({ user, csrf: 'csrf-token', flash: null, prefixes: [], users: [], total: 1, page: 1, pages: 1, filters: {},
+    logs: [{ created_at: '2026-09-24T12:00:00.000Z', username: 'superadmin', action: 'auth.login', target_type: 'user', target_id: 1, source_ip: '2001:db8:85a3::8a2e:370:7334' }] });
+  assert.match(longIp, /<button type="button" class="audit-ip" data-full="2001:db8:85a3::8a2e:370:7334">2001:db8:8…0:7334<\/button>/, 'IPv6 这类长地址中段省略，完整值放 data-full；触发器用 button（各平台都能点按聚焦）');
   assert.match(html, /10\.0\.0\.9/, '来源 IP 列');
   assert.match(html, /href="\/admin\/audit\?action=coupon&actor=2&from=2026-09-01">上一页/, '翻页保留筛选，第 1 页省略 page');
   assert.match(html, /href="\/admin\/audit\?action=coupon&actor=2&from=2026-09-01&page=3">下一页/);
@@ -727,6 +743,15 @@ test('后台 UI：标题区、面板头部、局部刷新与文案统一', () =>
   assert.match(presets, /<div class="panel-head"><h2>新增预设<\/h2><div class="head-actions"><button class="primary">保存预设<\/button><\/div><\/div>/, '新增预设按钮进标题行');
   assert.ok(!presets.includes('href="/admin/recycle">回收站<'), '顶栏移除回收站入口');
 
+  const presetCard = presetsPage({ user, csrf: 'csrf-token', flash: null, presets: [{ id: 3, name: '示例总店', active: 1, instructions: 'x', store_text: 'y' }] });
+  assert.match(presetCard, /<div class="preset-head"><h2>示例总店<\/h2><label class="check switch"><input type="checkbox" name="active" checked> 启用<\/label><\/div>/, '已有预设：开关移到右上角、排在「启用」前面（与设置页同一套开关样式）');
+  assert.ok(!presetCard.includes('启用该预设'), '开关有位置与标签就够，不再需要「该预设」这种说明');
+  assert.ok(!/<label class="check"><input type="checkbox" name="active"/.test(presetCard), '不再用原生复选框');
+  assert.match(presetCard, /<div class="danger-row"><button class="primary" type="submit">保存修改<\/button><button class="danger" type="submit" formaction="\/admin\/presets\/3\/delete"/, '底部按钮行只剩保存与删除');
+  assert.match(dash, /<div class="topbar-nav"><nav>/, '顶栏导航外层再包一层，供两侧提示条定位');
+  assert.match(dash, /<\/nav><button type="button" class="nav-hint nav-hint-left" aria-label="向左滚动导航"><svg viewBox="0 0 8 8" fill="currentColor" aria-hidden="true"><path d="M8 0 0 4l8 4z"/, '左侧提示是可点的按钮');
+  assert.match(dash, /<button type="button" class="nav-hint nav-hint-right" aria-label="向右滚动导航"><svg viewBox="0 0 8 8" fill="currentColor" aria-hidden="true"><path d="M0 0l8 4-8 4z"/, '右侧提示也是按钮');
+
   const recycle = recyclePage({ user, csrf: 'csrf-token', flash: null, faces: [{ id: 3, name: '旧券', offer_text: 'x', recycled_at: '2026-09-24T12:00:00.000Z' }], codes: [] });
   assert.match(recycle, /name="return" value="\/admin\/recycle"/, '恢复后留在回收站');
 
@@ -781,7 +806,7 @@ test('手机档：顶栏折叠菜单、表格卡片化与单列表单', () => {
 
   const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
   assert.match(css, /@media\(max-width:640px\)\{/, '新增手机档断点');
-  assert.match(css, /\.topbar\{flex-wrap:nowrap;gap:10px;min-height:52px;padding:8px 12px\}/, '手机档顶栏压成一行');
+  assert.match(css, /\.topbar\{--topbar-pad-y:8px;flex-wrap:nowrap;gap:10px;min-height:52px;padding:var\(--topbar-pad-y\) 12px\}/, '手机档顶栏压成一行（纵向 padding 提成变量给提示条对齐用）');
   assert.match(css, /\.brand-text\{display:none\}/, '手机档品牌只留图标');
   assert.match(css, /\.topbar nav\{order:0;flex:1 1 auto;flex-basis:auto;min-width:0;gap:14px;flex-wrap:nowrap;white-space:nowrap;overflow-x:auto/, '手机档导航单行横向滑动');
   assert.match(css, /\.topbar-side \.side-panel\{display:none;position:absolute;right:0;top:calc\(100% \+ 8px\)/, '菜单面板在手机上浮层展开');
@@ -789,7 +814,7 @@ test('手机档：顶栏折叠菜单、表格卡片化与单列表单', () => {
   assert.match(css, /\.details\{grid-template-columns:auto minmax\(0,1fr\) auto minmax\(0,1fr\);gap:8px 14px\}/, '券面/券码信息手机档双列（长字段用 .wide 独占一行）');
   assert.match(css, /\.admin-body \.panel thead\{display:none\}/, '表格手机档隐藏表头');
   assert.match(css, /\.admin-body \.panel td\[data-priority="low"\]\{display:none\}/, '次要列手机档隐藏');
-  assert.match(css, /\.admin-body \.panel tr:not\(\.record-row\):not\(\.code-card\)>td:not\(:first-child\):not\(\.row-ops\):not\(\[data-priority="low"\]\):not\(\[data-label="状态"\]\)::before\{content:attr\(data-label\)/, '非首列（状态、核销记录、券码卡片除外）显示「标签」');
+  assert.match(css, /\.admin-body \.panel tr:not\(\.record-row\):not\(\.code-card\):not\(\.audit-row\)>td:not\(:first-child\):not\(\.row-ops\):not\(\[data-priority="low"\]\):not\(\[data-label="状态"\]\)::before\{content:attr\(data-label\)/, '非首列（状态、核销记录、券码卡片、审计卡片除外）显示「标签」');
   assert.match(css, /\.admin-body \.panel tr\.code-card\{display:grid;grid-template-columns:1fr auto/, '券码卡片：名称 + 状态徽章一行、ID + 已用一行');
   assert.match(css, /\.admin-body \.panel tr\.code-card>td\[data-label="已用"\]\{grid-row:2\/3;grid-column:2\/3/, '已用次数排到 ID 行右侧');
   const codeRowsHtml = couponDetail({ user, csrf: 'csrf-token', flash: null, coupon: faceOf(), codes: [codeOf()], redemptions: [] });
@@ -841,9 +866,24 @@ test('细节修正：登录卡片宽度、页脚单行、面板不出内部滚�
   assert.match(css, /\.page-head>\.page-title>p\{order:3;flex:1 1 100%;margin:0\}/, '副标题整行排在最后；原来手机上标题/副标题/按钮占三行');
   assert.match(css, /td a small\{font-weight:400;color:var\(--muted\)\}/, '链接内的次要信息保持灰字不加粗');
   assert.match(css, /\.admin-body \.panel td:first-child a\{display:block\}/, '首列链接占满单元格，点击范围含次要信息');
-  assert.match(css, /\.topbar nav\[data-fade-right\]\{-webkit-mask-image:linear-gradient\(to left,transparent,#000 20px\)/, '导航右侧未显示全时淡出');
-  assert.match(css, /\.topbar nav\[data-fade-left\]\{-webkit-mask-image:linear-gradient\(to right,transparent,#000 20px\)/, '导航左侧未显示全时淡出');
-  assert.match(app, /setFlag\(topNav, 'data-fade-right', scrollable && topNav\.scrollLeft \+ topNav\.clientWidth < topNav\.scrollWidth - 1\)/, 'app.js 按滚动位置切换淡出');
+  assert.match(css, /\.topbar \.nav-hint\{[^}]*transition:opacity \.18s ease/, '导航提示条用透明度过渡，滚动位置一变不再突变');
+  assert.match(css, /\.topbar \.nav-hint-right::before\{right:0;background:linear-gradient\(to left,var\(--topbar-bg\) 45%,transparent\)\}/, '右提示的渐变贴导航右端，与顶栏同色');
+  assert.match(css, /\.topbar \.nav-hint\{[^}]*top:calc\(-1 \* var\(--topbar-pad-y\)\)[^}]*bottom:calc\(-1 \* var\(--topbar-pad-y\)\)[^}]*width:24px[^}]*background:none[^}]*cursor:pointer[^}]*visibility:hidden;pointer-events:none/, '提示条盖满整条顶栏、热区 24px、自身不画渐变，隐藏时不接收点击');
+  assert.match(css, /\.topbar \.nav-hint::before\{content:"";position:absolute;top:0;bottom:0;width:18px\}/, '可见渐变只占靠外缘的 18px');
+  assert.match(css, /\.topbar \.nav-hint-left::before\{left:0;background:linear-gradient\(to right,var\(--topbar-bg\) 45%,transparent\)\}/, '左提示的渐变贴导航左端');
+  assert.match(css, /\.topbar \.nav-hint\{[^}]*align-items:center;padding:0;/, '三角在顶栏里垂直居中，与导航文字同一条中线');
+  assert.match(css, /\.topbar\{--topbar-pad-y:8px;[^}]*padding:var\(--topbar-pad-y\) 12px\}/, '顶栏纵向 padding 提成变量，提示条据此对齐高度');
+  assert.match(css, /\.topbar-nav\{[^}]*align-self:stretch;align-items:center\}/, '外层拉满顶栏高度：否则提示条只盖住文字那一行，上下会露出笔画');
+  assert.match(css, /\.topbar \.topbar-nav\[data-fade-left\] \.nav-hint-left,\.topbar \.topbar-nav\[data-fade-right\] \.nav-hint-right\{opacity:1;visibility:visible;pointer-events:auto/, '提示条只在显示时才接收点击');
+  assert.match(css, /\.topbar \.nav-hint svg\{[^}]*width:7px;height:7px/, '三角再小一点');
+  assert.match(css, /html\{background:var\(--page-bg\)\}/, 'html 也有底色：跳转时浏览器画的画布不再是白的');
+  assert.match(css, /\.admin-body \.panel tr\.audit-row>td\[data-label="对"\]\{order:2\}/, '手机档审计卡片：「对」排在账号之后（DOM 顺序不动，桌面表格列序不变）');
+  assert.match(css, /\.admin-body \.panel tr\.audit-row>td\[data-label="来源 IP"\]\{display:flex;position:absolute;right:12px;top:10px/, '来源 IP 提到时间那一行右侧：绝对定位不参与换行，并明确 display 提回可见（本档通用规则里它是隐藏的）');
+  assert.match(css, /\.audit-ip:hover::after,\.audit-ip:focus::after\{opacity:1;visibility:visible\}/, '长 IP：点按（focus）或悬浮弹完整值');
+  assert.match(css, /\.admin-body \.panel tr\.audit-row>td:first-child\{flex:1 1 100%;color:var\(--muted\)/, '时间占满第一行（basis 100% 才能把句子挤到第二行），右侧空位让给来源 IP');
+  assert.match(app, /setFlag\(navShell, 'data-fade-right', scrollable && topNav\.scrollLeft \+ topNav\.clientWidth < topNav\.scrollWidth - 1\)/, 'app.js 按滚动位置切换提示，标记挂在外层（好让 CSS 用后代选择器过渡）');
+  assert.match(app, /topNav\.scrollBy\(\{ left: direction \* Math\.round\(topNav\.clientWidth \* 0\.6\), behavior: 'smooth' \}\)/, '点两侧小三角往对应方向滚一屏的六成（原来是纯装饰，点击会穿透到被盖住的导航项）');
+  assert.ok(!/\.topbar nav\[data-fade/.test(css), '提示不再用挂在 nav 上的 mask 写法（它无法过渡，切换时是突变）');
 
   // 名称与次要信息同在一个链接里
   const list = couponsPage({ user, csrf: 'csrf-token', flash: null, coupons: [{ id: 1, name: 'A', offer_text: 'x', max_uses: 1, code_total: 1, code_available: 1, used_total: 0, current_state: 'valid' }] });

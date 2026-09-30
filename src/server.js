@@ -205,7 +205,8 @@ function validateCoupon(body) {
 // 请求日志：一行一个请求（方法、脱敏路径、状态、耗时、客户端 IP）；静态资源不记。
 app.addHook('onResponse', async (request, reply) => {
   const path = safePath(request.raw?.url || request.url);
-  if (path.startsWith('/assets/') || path === '/favicon.ico') return;
+  // 静态资源与 Service Worker 不记：它们随每次页面加载出现，记了只会淹没真正的请求
+  if (path.startsWith('/assets/') || path === '/favicon.ico' || path === '/sw.js') return;
   logInfo('request', kv({
     method: request.method,
     path,

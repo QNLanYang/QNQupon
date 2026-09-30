@@ -27,7 +27,8 @@ code{font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;f
    顶栏压成单行；表单/详情改单列；后台表格改成「卡片」：首列当标题，其余按「标签: 值」逐行，
    标了 data-priority="low" 的次要列在手机上隐藏，操作按钮放卡片底部。 */
 @media(max-width:640px){
-  .topbar{flex-wrap:nowrap;gap:10px;min-height:52px;padding:8px 12px}
+  /* --topbar-pad-y 给两侧提示条用：它必须盖满整条顶栏（含 padding），否则上下会露出被滑走的字的笔画 */
+  .topbar{--topbar-pad-y:8px;flex-wrap:nowrap;gap:10px;min-height:52px;padding:var(--topbar-pad-y) 12px}
   .brand-text{display:none}
   .brand-mark{width:26px;height:26px}
   .topbar nav{order:0;flex:1 1 auto;flex-basis:auto;min-width:0;gap:14px;flex-wrap:nowrap;white-space:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
@@ -73,8 +74,8 @@ code{font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;f
   .admin-body .panel td[data-label="状态"]::before{content:none}
   .admin-body .panel td:first-child{padding-bottom:4px;padding-right:80px}
   .admin-body .panel td:first-child a{font-size:16px}
-  .admin-body .panel tr:not(.record-row):not(.code-card)>td:not(:first-child):not(.row-ops):not([data-priority="low"]):not([data-label="状态"]){display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:13px}
-  .admin-body .panel tr:not(.record-row):not(.code-card)>td:not(:first-child):not(.row-ops):not([data-priority="low"]):not([data-label="状态"])::before{content:attr(data-label);color:var(--muted);flex:0 0 auto}
+  .admin-body .panel tr:not(.record-row):not(.code-card):not(.audit-row)>td:not(:first-child):not(.row-ops):not([data-priority="low"]):not([data-label="状态"]){display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:13px}
+  .admin-body .panel tr:not(.record-row):not(.code-card):not(.audit-row)>td:not(:first-child):not(.row-ops):not([data-priority="low"]):not([data-label="状态"])::before{content:attr(data-label);color:var(--muted);flex:0 0 auto}
   /* 券码列表卡片：名称 + 状态徽章一行；ID/备注 + 已用一行；操作一行 */
   .admin-body .panel tr.code-card{display:grid;grid-template-columns:1fr auto;gap:2px 10px}
   .admin-body .panel tr.code-card>td{border:0;padding:0}
@@ -92,6 +93,20 @@ code{font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;f
   .admin-body .panel tr.record-row>td[data-label="券面"],.admin-body .panel tr.record-row>td[data-label="优惠券"],.admin-body .panel tr.record-row>td[data-label="券码"]{order:3;flex:1 1 auto;min-width:0}
   .admin-body .panel tr.record-row>td[data-label="券码"]{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
   .admin-body .panel tr.record-row td small{display:inline;margin:0}
+  /* 审计卡片：第一行时间，第二行「账号 对 对象 做了 操作」。
+     连接词借 data-label（手机档的 ::before 取它），桌面端由表头承担，所以桌面表格没变。 */
+  .admin-body .panel tr.audit-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px}
+  .admin-body .panel tr.audit-row>td{display:flex;gap:5px;align-items:baseline;border:0;padding:0}
+  .admin-body .panel tr.audit-row>td::before{content:attr(data-label);color:var(--muted);flex:0 0 auto}
+  /* 时间占满第一行（basis 100% 才能把句子挤到第二行），右侧空出来的地方由绝对定位的来源 IP 占住 */
+  .admin-body .panel tr.audit-row>td:first-child{flex:1 1 100%;color:var(--muted);font-size:13px;padding:0}
+  .admin-body .panel tr.audit-row>td:first-child::before{content:none}
+  /* 来源 IP 走时间那一行的右侧：绝对定位挂在行上（手机档的 tr 已是 position:relative），不参与换行；
+     本档的 td[data-priority="low"]{display:none} 优先级更低，这里用 display 明确提回来。 */
+  .admin-body .panel tr.audit-row>td[data-label="来源 IP"]{display:flex;position:absolute;right:12px;top:10px;margin:0;max-width:58%;justify-content:flex-end;font-size:12px;color:var(--muted)}
+  .admin-body .panel tr.audit-row>td[data-label="来源 IP"]::before{content:none}
+  .admin-body .panel tr.audit-row>td[data-label="对"]{order:2}
+  .admin-body .panel tr.audit-row>td[data-label="做了"]{order:3}
   .admin-body .panel .mail>svg{display:block}
   .admin-body .panel .mail-text{display:none}
   .admin-body .panel td.row-ops{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;min-width:0;white-space:normal;margin-top:8px;padding-top:10px;border-top:1px dashed var(--line)}
@@ -118,13 +133,31 @@ code{font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;f
   .admin-body .panel tr.ops-top>td.row-ops{position:absolute;right:10px;top:8px;margin:0;padding:0;border-top:0}
   .admin-body .panel tr.ops-top>td:first-child{padding-right:86px}
   .admin-body .panel{overflow:visible}
-  /* 导航横向滑动时，未显示全的一侧淡出，提示「还有内容」 */
-  .topbar nav[data-fade-left]{-webkit-mask-image:linear-gradient(to right,transparent,#000 20px);mask-image:linear-gradient(to right,transparent,#000 20px)}
-  .topbar nav[data-fade-right]{-webkit-mask-image:linear-gradient(to left,transparent,#000 20px);mask-image:linear-gradient(to left,transparent,#000 20px)}
-  .topbar nav[data-fade-left][data-fade-right]{-webkit-mask-image:linear-gradient(to right,transparent,#000 20px,#000 calc(100% - 20px),transparent);mask-image:linear-gradient(to right,transparent,#000 20px,#000 calc(100% - 20px),transparent)}
+  /* 导航横向滑动时，未显示全的那一侧淡出 + 小三角提示「还有内容」。
+     原来用 mask-image：它无法过渡，滚动位置一变就是突变；这里改成常驻的渐变压层，
+     显示/隐藏走 opacity 过渡（三角形叠在压层上方）。 */
+  .topbar .topbar-nav{position:relative}
+  /* 小三角是可点的：点它往对应方向滚一屏的六成。压层只在自己显示时才接收点击——
+     否则它会挡住被盖住的那个导航项，点上去等于误点链接。 */
+  /* 提示条：热区 24px（折中，比可见渐变宽 6px 好按）；可见渐变只占靠外缘的 18px，画在 ::before 上 */
+  .topbar .nav-hint{display:flex;position:absolute;top:calc(-1 * var(--topbar-pad-y));bottom:calc(-1 * var(--topbar-pad-y));width:24px;align-items:center;padding:0;border:0;background:none;color:#fff;cursor:pointer;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .18s ease,visibility 0s linear .18s}
+  .topbar .nav-hint::before{content:"";position:absolute;top:0;bottom:0;width:18px}
+  .topbar .nav-hint-left{left:0;justify-content:flex-start}
+  .topbar .nav-hint-left::before{left:0;background:linear-gradient(to right,var(--topbar-bg) 45%,transparent)}
+  .topbar .nav-hint-right{right:0;justify-content:flex-end}
+  .topbar .nav-hint-right::before{right:0;background:linear-gradient(to left,var(--topbar-bg) 45%,transparent)}
+  .topbar .topbar-nav[data-fade-left] .nav-hint-left,.topbar .topbar-nav[data-fade-right] .nav-hint-right{opacity:1;visibility:visible;pointer-events:auto;transition-delay:0s}
+  /* position:relative 让三角排在压层之上（两者都是定位元素时按 DOM 顺序绘制） */
+  .topbar .nav-hint svg{position:relative;width:7px;height:7px;display:block;flex:0 0 auto}
 }
 
-.preset-list{display:flex;flex-direction:column;gap:18px}.preset-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.preset-head h2{margin:0}.row-ops{white-space:nowrap}table td.row-ops{min-width:300px}.row-ops form,.inline-form{display:inline-flex;gap:6px;align-items:center;margin:2px 6px 2px 0}.row-ops input[type=password]{max-width:160px;padding:6px 8px}.users-table th,.users-table td:not(.row-ops){white-space:nowrap}.users-table td.row-ops{white-space:normal}
+/* 顶栏导航外层：桌面与手机都靠它撑满并允许收缩。align-self:stretch + align-items:center 把它拉满顶栏高度，
+   两侧提示条（top/bottom:0）才能盖住整条顶栏——否则只盖住文字那一行，上下会露出被滑走的字的笔画。 */
+.topbar-nav{position:relative;display:flex;flex:1;min-width:0;align-self:stretch;align-items:center}
+.nav-hint{display:none}
+/* html 也要有底色：跳转时浏览器画的是画布（html 的底色），只给 body 设底色会闪一下白 */
+html{background:var(--page-bg)}
+.preset-list{display:flex;flex-direction:column;gap:18px}.preset-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 12px}.preset-head h2{margin:0;min-width:0;overflow-wrap:anywhere}.row-ops{white-space:nowrap}table td.row-ops{min-width:300px}.row-ops form,.inline-form{display:inline-flex;gap:6px;align-items:center;margin:2px 6px 2px 0}.row-ops input[type=password]{max-width:160px;padding:6px 8px}.users-table th,.users-table td:not(.row-ops){white-space:nowrap}.users-table td.row-ops{white-space:normal}
 .panel-head{display:flex;align-items:center;gap:12px;margin:0 0 14px}.panel-head h2{margin:0}.panel-head .tip{position:static}.panel-head .tip .tip-body{left:10px;right:auto;top:32px;width:min(88%,420px)}.panel-head .head-actions{margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.is-busy{opacity:.6;pointer-events:none}.back-arrow{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;margin-right:-4px;border-radius:7px;color:var(--muted);align-self:center;flex:0 0 auto;transition:color .15s,background-color .15s}.back-arrow:hover{color:var(--ink);background:var(--secondary-bg)}.back-arrow:active{color:var(--accent);background:var(--secondary-hover-bg)}.back-arrow svg{width:18px;height:18px;display:block}
 .qr-preview{display:flex;gap:18px;align-items:center;margin-top:20px;padding-top:18px;border-top:1px dashed var(--line);flex-wrap:wrap}.qr-preview img{display:block;width:150px;height:150px;padding:11px;border:1px solid var(--line);border-radius:7px;background:#fff}.qr-links{display:flex;flex-direction:column;gap:8px;align-items:flex-start;min-width:200px}.qr-links p{margin:0}
 .modal-mask{position:fixed;inset:0;z-index:60;background:#10182899;display:flex;align-items:center;justify-content:center;padding:22px}.modal-mask[hidden]{display:none}.modal-card{background:var(--paper);width:100%;max-width:430px;border-radius:18px;padding:26px;box-shadow:var(--shadow-modal)}.modal-card h3{margin:0 0 8px}.modal-text{color:var(--muted);white-space:pre-wrap}.modal-input{width:100%;margin-top:12px;border:1px solid var(--field-border);border-radius:9px;padding:10px 11px;background:var(--field-bg);font:inherit}.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
@@ -139,6 +172,12 @@ code{font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;f
 .tip:hover .tip-body,.tip:focus-within .tip-body{opacity:1;visibility:visible;transform:none}
 .tip .tip-body p{margin:0 0 6px}
 .tip .tip-body p:last-child{margin-bottom:0}
+/* 被截断的取值（目前只有审计页的长 IP）：点按或悬浮弹完整值，纯 CSS 零 JS。
+   只有真正被截过才套这个类，IPv4 这类放得下的保持原样、不加下划线也不弹气泡。
+   触发器是 button（各平台都能点按聚焦，与面板右上角的 ❓ 同一套路），所以要把按钮外观抹平。 */
+.admin-body .audit-ip{position:relative;padding:0;border:0;border-bottom:1px dotted currentColor;border-radius:0;background:none;font:inherit;color:inherit;cursor:pointer}
+.audit-ip::after{content:attr(data-full);position:absolute;right:0;bottom:calc(100% + 8px);white-space:nowrap;padding:6px 9px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font-size:12px;box-shadow:var(--shadow-card);opacity:0;visibility:hidden;transition:opacity .12s ease}
+.audit-ip:hover::after,.audit-ip:focus::after{opacity:1;visibility:visible}
 /* 操作反馈卡片（右上角滑入）：HTML 默认就输出，无 JS 也可见；app.js 负责滑入、超时淡出、关闭与堆叠。
    优先级用 --good/--bad/--info 三条语义色，浅深色随主题变量自动切换。 */
 .toast-host{position:fixed;top:var(--toast-top,72px);right:16px;z-index:80;display:flex;flex-direction:column;gap:10px;width:min(92vw,380px);pointer-events:none}
