@@ -102,6 +102,53 @@ if (sideWrap && menuToggle) {
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') setMenu(false); });
 }
 
+// ---- 浮窗按钮（核销记录的「筛选」、券面详情的「新建」）：点按钮展开，点外部或 Esc 收起 ----
+// 浮窗里就是普通表单，提交行为不变；这里只管开合，同一时间只留一个。
+const popoverPanel = (button) => document.getElementById(button.getAttribute('aria-controls') || '');
+// 展开时压暗页面其余部分（比确认框的遮罩轻一档）：层次更清楚，点遮罩即收起
+const popoverMask = document.createElement('div');
+popoverMask.className = 'popover-mask';
+popoverMask.hidden = true;
+document.body.appendChild(popoverMask);
+function syncPopoverMask() {
+  popoverMask.hidden = !document.querySelector('[data-popover-toggle][aria-expanded="true"]');
+}
+// 浮窗挂在按钮下面，卡片靠页面底部时展开后会掉到视口外（手机档尤其明显）：
+// 只补竖向滚动，滚最小的距离让浮窗整体可见；横向不插手，免得页面被推歪。
+function keepPopoverInView(panel) {
+  const rect = panel.getBoundingClientRect();
+  const margin = 12;
+  const below = rect.bottom - window.innerHeight + margin;
+  const above = margin - rect.top;
+  if (below > 0) window.scrollBy({ top: below, behavior: 'smooth' });
+  else if (above > 0) window.scrollBy({ top: -above, behavior: 'smooth' });
+}
+function closePopovers(keep) {
+  for (const button of document.querySelectorAll('[data-popover-toggle][aria-expanded="true"]')) {
+    const panel = popoverPanel(button);
+    if (panel === keep) continue;
+    if (panel) panel.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+  }
+  syncPopoverMask();
+}
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-popover-toggle]');
+  if (!button) {
+    if (!event.target.closest('.popover')) closePopovers();
+    return;
+  }
+  const panel = popoverPanel(button);
+  if (!panel) return;
+  const open = panel.hidden;
+  closePopovers(panel);
+  panel.hidden = !open;
+  button.setAttribute('aria-expanded', open ? 'true' : 'false');
+  syncPopoverMask();
+  if (open) keepPopoverInView(panel);
+});
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closePopovers(); });
+
 // ---- 顶栏导航横向滑动：没显示全的那一侧淡出，提示「还有内容」 ----
 const topNav = document.querySelector('.topbar nav');
 if (topNav) {
@@ -220,6 +267,45 @@ function showToast(message, type = 'success') {
 const armAllToasts = () => { for (const card of document.querySelectorAll('.toast')) armToast(card); };
 armAllToasts();
 
+// ---- 页脚保持单行：放不下就迭代缩小字号（最小 9px）----
+// 注意：页脚有 overflow:hidden 兜底，而 Range 的矩形会被祖先裁剪框裁掉——测量时必须临时放开裁剪，
+// 否则永远量到「等于盒子宽」而误判为放得下。
+const siteFooter = document.querySelector('.site-footer');
+if (siteFooter) {
+  const measure = () => {
+    const previous = siteFooter.style.overflow;
+    siteFooter.style.overflow = 'visible';
+    const range = document.createRange();
+    range.selectNodeContents(siteFooter);
+    const width = range.getBoundingClientRect().width;
+    siteFooter.style.overflow = previous;
+    return width;
+  };
+  const fitFooter = () => {
+    siteFooter.style.whiteSpace = 'nowrap';
+    siteFooter.style.fontSize = '';
+    const styles = getComputedStyle(siteFooter);
+    const base = parseFloat(styles.fontSize) || 12;
+    const pad = (parseFloat(styles.paddingLeft) || 0) + (parseFloat(styles.paddingRight) || 0);
+    const target = Math.max(0, siteFooter.clientWidth - pad - 6); // 留 6px 余量，不让文字贴边
+    let size = base;
+    for (let i = 0; i < 5; i++) {
+      const width = measure();
+      if (!width || width <= target) break;
+      size = Math.max(9, (size * target) / width);
+      siteFooter.style.fontSize = `${size.toFixed(2)}px`;
+      if (size <= 9) break;
+    }
+  };
+  fitFooter();
+  window.addEventListener('resize', fitFooter);
+  window.addEventListener('load', fitFooter);      // 字体/布局稳定后再量
+  setTimeout(fitFooter, 0);
+  setTimeout(fitFooter, 300);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitFooter).catch(() => {});
+  if (typeof ResizeObserver === 'function') new ResizeObserver(fitFooter).observe(siteFooter);
+}
+
 // ---- 表单提交升级为局部刷新（仅后台页；无脚本或出错时行为与现在完全一致）----
 // 服务端照旧渲染整页并重定向，这里只做两件事：把新页面的 <main> 与反馈卡片换上去、恢复滚动位置，
 // 于是既拿到服务端渲染的反馈卡片，又不会整页闪一下、跳回顶部、把其他面板里没提交的内容冲掉。
@@ -269,6 +355,7 @@ function swapMain(next) {
   if (nextHost) document.querySelector('[data-toast-host]')?.replaceWith(nextHost);
   currentMain.replaceWith(nextMain);
   document.title = next.title;
+  syncPopoverMask(); // 局部刷新会连浮窗一起换掉，遮罩要跟着收，否则页面一直发暗
   return true;
 }
 

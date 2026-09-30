@@ -172,7 +172,10 @@ test('券面详情：创建券码表单与空状态引导', () => {
   assert.match(html, /name="show_name"[\s\S]{0,160}跟随全局设置[\s\S]{0,120}始终显示[\s\S]{0,120}始终隐藏/, '创建时可选券码名显示覆写');
   assert.match(html, /name="note"/, '创建时可填发给谁的备注');
   assert.match(html, /name="count" id="code-count" type="number" min="1" max="100"/, '创建表单带生成数量（数量 1 = 单张，>1 = 批量）');
-  assert.match(html, /class="head-actions"><button class="primary" id="code-submit" type="submit" form="code-create-form">创建券码<\/button><\/div><\/div><form id="code-create-form"/, '创建按钮移到面板标题行右侧，用 form 属性关联表单');
+  assert.match(html, /<div class="panel-head"><h2>券码（\d+）<\/h2><span class="tip">/, '券码卡片说明收到标题行右上角 ❓');
+  assert.match(html, /<div class="head-actions"><div class="popover-wrap"><button type="button" class="primary" data-popover-toggle aria-expanded="false" aria-controls="code-create">新建<\/button><div class="popover" id="code-create" hidden><form id="code-create-form"/, '创建券码收进「券码」卡片右上角的「新建」浮窗，默认收起');
+  assert.match(html, /<div class="actions"><button class="primary" id="code-submit" type="submit">创建券码<\/button><\/div>/, '提交按钮在表单内，保留 id 供批量文案切换');
+  assert.ok(!html.includes('id="create-code"'), '不再单独占一个「创建券码」面板');
   assert.match(html, /位数与数量同宽，如 25 张 → <code>#01<\/code>…#25/, '批量编号规则收进 ❓ 说明');
   assert.match(html, /券码名默认不显示/, '批量生成的券码名默认隐藏');
   assert.match(html, /class="tip"><button type="button" aria-label="本面板说明">\?<\/button>/, '面板说明收进右上角 ❓（纯 CSS 气泡）');
@@ -362,7 +365,7 @@ test('回收站页：券面与券码两栏、恢复入口与导航', () => {
 
 test('优惠券列表与概览带回收站入口', () => {
   const list = couponsPage({ user, csrf: 'csrf-token', flash: null, coupons: [] });
-  assert.match(list, /href="\/admin\/recycle">回收站 →</, '保留回收站入口');
+  assert.match(list, /<a class="title-link" href="\/admin\/recycle">回收站<svg class="ico-open"/, '回收站入口在标题行、尾部用外链图标（囗↗）');
   const dash = dashboard({ user, csrf: 'csrf-token', flash: null, coupons: [], stats: { valid: 0, used: 0, expiring: 0, recycled: 2 } });
   assert.match(dash, /class="stat-link" href="\/admin\/recycle"/, '回收站统计应可点击');
   assert.match(dash, /最近核销/, '概览要有最近核销面板');
@@ -554,7 +557,7 @@ test('核销二次确认：标题与提示可由页面指定', () => {
 test('列表刷新按钮与概览时区说明', () => {
   const list = couponsPage({ user, csrf: 'csrf-token', flash: null, coupons: [] });
   assert.match(list, /<div class="actions"><a class="secondary button" href="\/admin\/coupons" data-refresh>刷新<\/a>/);
-  assert.match(list, /href="\/admin\/coupons\/new">创建优惠券</);
+  assert.match(list, /href="\/admin\/coupons\/new">新建<\/a>/, '列表面板主按钮只说「新建」（紧跟页面标题「优惠券」，且与券码卡片的「新建」用词统一）');
 
   const recycle = recyclePage({ user, csrf: 'csrf-token', flash: null, faces: [], codes: [] });
   assert.match(recycle, /<div class="actions"><a class="secondary button" href="\/admin\/recycle" data-refresh>刷新<\/a><\/div>/);
@@ -620,6 +623,7 @@ test('核销记录总页：筛选表单、分页链接与表格列', () => {
   assert.match(html, /name="coupon"[\s\S]{0,400}?value="3" selected/, '券面下拉回显选中');
   assert.match(html, /（已停用）/, '下拉标注停用状态');
   assert.match(html, /name="from" value="2026-09-01"/, '开始日期回显');
+  assert.match(html, /<span class="popover-count">2<\/span>/, '已选条件数用角标提示，免得把筛选结果当成全量');
   assert.match(html, /41 条/, '总条数可见');
   assert.match(html, /第 2 \/ 3 页/, '页码可见');
   assert.match(html, /2026-09-24 20:00/, '时间按北京时间');
@@ -713,7 +717,9 @@ test('后台 UI：标题区、面板头部、局部刷新与文案统一', () =>
   assert.match(dash, /<div class="page-title"><h1>概览<\/h1><p>时间均为北京时间<\/p><\/div>/, '标题与小字同行（同一行结构）');
 
   const redemptions = redemptionsPage({ user, csrf: 'csrf-token', flash: null, coupons: [], rows: [], total: 0, page: 1, pages: 1, filters: {} });
-  assert.match(redemptions, /<div class="panel-head"><h2>筛选<\/h2><div class="head-actions"><button class="primary" type="submit">查询<\/button><a class="secondary button" href="\/admin\/redemptions">重置<\/a><\/div><\/div>/, '筛选的查询/重置进标题行');
+  assert.match(redemptions, /<div class="actions"><div class="popover-wrap"><button type="button" class="secondary" data-popover-toggle aria-expanded="false" aria-controls="redemption-filter">筛选<\/button><div class="popover" id="redemption-filter" hidden>/, '筛选收进标题行右侧按钮的浮窗，平时收起不占版面');
+  assert.match(redemptions, /<div class="actions"><button class="primary" type="submit">查询<\/button><a class="secondary button" href="\/admin\/redemptions">重置<\/a><\/div>/, '浮窗里保留查询/重置');
+  assert.ok(!redemptions.includes('<h2>筛选</h2>'), '不再有整块常驻的筛选面板');
   assert.match(redemptions, /class="back-arrow" href="\/admin"/, '核销记录用标题左侧箭头返回概览');
   assert.ok(!dash.includes('back-arrow'), '概览是顶级页，没有返回箭头');
 
@@ -728,13 +734,24 @@ test('后台 UI：标题区、面板头部、局部刷新与文案统一', () =>
   assert.match(css, /\.page-head>\.page-title\{display:flex;align-items:baseline/, '标题与小字基线对齐、同行显示');
   assert.match(css, /\.back-arrow\{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;margin-right:-4px/, '返回箭头收窄（24px 盒 + 18px 图标，并收紧与标题的间距）');
   assert.match(css, /\.back-arrow:hover\{color:var\(--ink\)/, '悬浮时颜色变深');
-  assert.match(css, /\.code-create label\.count-field\{flex:0 0 120px\}/, '生成数量输入框收窄，不再占满整行');
+  assert.match(css, /\.popover-form label\{display:block;font-weight:700/, '浮窗里的表单字段竖排，宽度自适应浮窗');
+  assert.match(css, /\.popover\[hidden\]\{display:none\}/, '浮窗默认收起（无脚本时也不占版面）');
   assert.match(css, /\.panel-head\{display:flex;align-items:center/, '面板头部为一行布局');
   assert.match(css, /\.panel-head \.tip\{position:static\}/, '面板头部的 ❓ 随标题排布，避让右侧按钮');
   assert.match(css, /\.is-busy\{opacity:\.6;pointer-events:none\}/, '刷新请求期间给按钮忙碌态');
 
   const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   assert.match(app, /closest\('\[data-refresh\]'\)/, '刷新按钮走局部更新');
+  assert.match(app, /closest\('\[data-popover-toggle\]'\)/, '浮窗按钮走点击委托');
+  assert.match(app, /if \(!event\.target\.closest\('\.popover'\)\) closePopovers\(\)/, '点浮窗外收起浮窗');
+  assert.match(app, /if \(event\.key === 'Escape'\) closePopovers\(\)/, 'Esc 收起浮窗');
+  assert.match(app, /const popoverMask = document\.createElement\('div'\)/, '浮窗遮罩由脚本建一次、挂在 body 上（无脚本时浮窗本来就是收起的）');
+  assert.match(app, /popoverMask\.hidden = !document\.querySelector\('\[data-popover-toggle\]\[aria-expanded="true"\]'\)/, '有浮窗打开才显示遮罩');
+  assert.match(css, /\.popover-mask\{position:fixed;inset:0;z-index:50;background:#00000066\}/, '遮罩压暗其余部分（40% 黑，深色主题下也看得出）');
+  assert.match(app, /syncPopoverMask\(\); \/\/ 局部刷新会连浮窗一起换掉/, '局部刷新后收回遮罩，避免页面一直发暗');
+  assert.match(app, /function keepPopoverInView\(panel\)/, '浮窗展开后自动滚到视口内');
+  assert.match(app, /const below = rect\.bottom - window\.innerHeight \+ margin/, '只补竖向滚动差量，不动横向');
+  assert.match(app, /if \(open\) keepPopoverInView\(panel\)/, '仅在展开时滚，收起不折腾页面');
   assert.match(app, /restoreFields\(snapshot, '\\u0000refresh'\)/, '刷新保留未提交的输入');
   assert.match(app, /nextMain\.querySelector\('\.site-footer'\)\?\.remove\(\)/, '局部替换时保留当前页脚，主题开关的高亮不被重置成默认');
 });
@@ -816,9 +833,10 @@ test('细节修正：登录卡片宽度、页脚单行、面板不出内部滚�
   assert.match(css, /\.auth-card\{width:100%;max-width:520px/, '登录/初始化卡片补足宽度，电脑上不再过窄');
   assert.ok(!/\.panel\{padding:14px;overflow-x:auto\}/.test(css), '面板不再设 overflow-x（auto 会连带纵向出现内部滚动）');
   assert.match(css, /\.admin-body \.panel\{overflow:visible\}/, '手机档面板不产生内部滚动');
-  assert.match(css, /\.page-head>\.page-title\{[^}]*flex:1 1 auto;min-width:0\}/, '标题块可收缩，按钮尽量留在标题行');
+  assert.match(css, /\.page-head>\.page-title\{[^}]*flex:1 1 0%;min-width:0\}/, '标题块用 0 基准可收缩：长标题不会把按钮挤到下一行（桌面与手机档同理）');
   assert.ok(!css.includes('.page-head{flex-direction:column}'), '不再强制标题与按钮分成两行');
   assert.match(css, /\.page-head>\.page-title\{display:contents\}/, '手机档把标题块拆开，副标题可单独占行');
+  assert.match(css, /\.page-head>\.page-title>h1\{flex:1 1 0%;min-width:0\}/, '手机档标题用 0 基准可收缩：长标题在自己框内折行，不会把按钮挤到下一行');
   assert.match(css, /\.page-head>\.actions\{order:2;margin-left:auto\}/, '手机档按钮留在标题行右侧');
   assert.match(css, /\.page-head>\.page-title>p\{order:3;flex:1 1 100%;margin:0\}/, '副标题整行排在最后；原来手机上标题/副标题/按钮占三行');
   assert.match(css, /td a small\{font-weight:400;color:var\(--muted\)\}/, '链接内的次要信息保持灰字不加粗');
@@ -879,5 +897,34 @@ test('手机按钮收紧、设置页双列与开关、账号页与测试邮件',
   const mailer = readFileSync(new URL('../src/mailer.js', import.meta.url), 'utf8');
   assert.match(mailer, /可忽略/, '测试邮件文案注明可忽略');
   assert.match(mailer, /【测试】/, '测试邮件标题带【测试】');
+});
+
+test('末批细节：页脚单行自适应、按钮与胶囊尺寸、回收站入口与恢复位置、券码 ID 胶囊', () => {
+  const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+
+  assert.match(app, /siteFooter\.style\.whiteSpace = 'nowrap'/, '页脚测量时先锁成单行（无脚本时仍可折行）');
+  assert.match(app, /siteFooter\.style\.overflow = 'visible'/, '测量时临时放开裁剪：否则 Range 会被 overflow:hidden 裁成盒子宽而误判放得下');
+  assert.match(app, /size = Math\.max\(9, \(size \* target\) \/ width\)/, '页脚放不下就迭代缩小字号（最小 9px，留 6px 余量）');
+  assert.match(css, /\.site-footer\{[^}]*overflow:hidden;text-overflow:ellipsis;-webkit-text-size-adjust:100%/, '页脚兜底：裁掉横向溢出并关闭文本自增，保证不产生横向滚动空间');
+
+  assert.match(css, /\.admin-body \.panel td\.row-ops button,\.admin-body \.panel td\.row-ops \.button\{padding:5px 8px;font-size:13\.5px/, '表格操作列按钮与券面详情同尺寸');
+  assert.match(css, /\.admin-body \.badge\{padding:0 6px;font-size:11px;line-height:1\.45\}/, '手机档状态胶囊更矮（不高于名称字号）');
+
+  const list = couponsPage({ user, csrf: 'csrf-token', flash: null, coupons: [] });
+  assert.match(list, /<h1>优惠券<\/h1><a class="title-link" href="\/admin\/recycle">回收站<svg class="ico-open"/, '回收站入口与「优惠券」主标题同行');
+  assert.match(list, /<section class="page-head has-title-link">/, '带标题行入口的页面标记出来，便于手机档单独排布');
+  assert.match(list, /<\/a><span class="title-gap" aria-hidden="true"><\/span><p>券面定义优惠与次数/, '入口紧跟标题，后面跟空档占位元素');
+  assert.match(css, /\.page-head>\.page-title>\.title-link\{order:1\}/, '手机档入口链接与标题同组');
+  assert.match(css, /\.page-head\.has-title-link>\.page-title>h1\{flex:0 1 auto\}/, '手机档标题按内容宽、不参与伸缩（否则会被占位元素挤成竖排）');
+  assert.match(css, /\.page-head\.has-title-link>\.page-title>\.title-gap\{order:1;flex:1 1 0%;min-width:0\}/, '手机档空档占位：按钮靠右、入口贴标题，二者不再相邻');
+  const recycle = recyclePage({ user, csrf: 'csrf-token', flash: null, faces: [{ id: 3, name: '旧券', offer_text: 'x', recycled_at: '2026-09-24T12:00:00.000Z' }], codes: [] });
+  assert.match(recycle, /<tr class="ops-top">/, '回收站行标记 ops-top');
+  assert.match(css, /\.admin-body \.panel tr\.ops-top>td\.row-ops\{position:absolute;right:10px;top:8px/, '手机档「恢复」移到卡片标题行右侧');
+
+  const detail = couponDetail({ user, csrf: 'csrf-token', flash: null, coupon: faceOf(), codes: [codeOf()], redemptions: [] });
+  assert.match(detail, /<small><code>cd-AbCdEfGh1234<\/code>/, '券码列表副标题的 ID 用等宽胶囊');
+  const code = codeDetail({ user, csrf: 'csrf-token', flash: null, code: codeOf(), redemptions: [] });
+  assert.match(code, /<p>属于「券」· x · <span class="badge/, '券码详情副标题不再重复 ID（只在券码信息里显示）');
 });
 
