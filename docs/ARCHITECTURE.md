@@ -46,14 +46,15 @@ test/               node --test 测试
 docs/nginx/         生产 Nginx 示例配置
 ```
 
-## 数据模型（8 张表）
+## 数据模型（9 张表）
 
 | 表 | 作用 | 关键设计 |
 | --- | --- | --- |
 | `users` | 两级账号 | `role ∈ {super_admin, business_admin}`，`active` 停用即吊销会话 |
 | `sessions` | 后台会话 | 只存 token 的哈希 + 与会话绑定的 `csrf_hash`，过期时间 `SESSION_HOURS`（默认 12 小时） |
 | `coupons` | **券面** | 自增整数 ID；`starts_on/expires_on` 为日期字符串（自然日）；`status ∈ {active, disabled, recycled}` |
-| `voucher_codes` | **券码** | 主键为 `cd-` + 12 位随机 ID 的 TEXT；`token_hash`（唯一）+ `token_ciphertext`；`used_count` 带 `CHECK(used_count >= 0)`；`show_name` 券码名显示覆写（NULL 跟随全局、1 显示、0 隐藏） |
+| `voucher_codes` | **券码** | 主键为 `cd-` + 12 位随机 ID 的 TEXT；`token_hash`（唯一）+ `token_ciphertext`；`used_count` 带 `CHECK(used_count >= 0)`；`show_name` 券码名显示覆写（NULL 跟随全局、1 显示、0 隐藏）；`issued` / `issued_at` 已发放标记（客人取走分享券图时会自动置 1） |
+| `code_shares` | **分享链接** | 一次性下载凭证：`key_hash`（唯一，查找用）+ `key_ciphertext`（后台再次展示二维码用）；`face_fingerprint` 券面内容指纹（变了就不复用旧链接）；`expires_at` / `used_at` / `revoked_at` |
 | `redemptions` | 核销记录 | 每次核销一行：时间、来源 IP、UA、邮件状态、唯一 `confirmation_code` |
 | `presets` | 建券预设 | 说明/门店文案模板 |
 | `app_settings` | 键值设置 | `encrypted` 标记的值用 AES-256-GCM 加密存储（如 SMTP 密码） |
