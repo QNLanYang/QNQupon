@@ -61,6 +61,8 @@ export function createDb(config) {
       token_hash TEXT NOT NULL UNIQUE, token_ciphertext TEXT NOT NULL,
       note TEXT,
       show_name INTEGER, -- 券码名显示覆写：NULL=跟随全局设置，1=始终显示，0=始终隐藏
+      issued INTEGER NOT NULL DEFAULT 0, -- 已发放：1=已发给客人（分享链接被取走时会自动置 1）
+      issued_at TEXT,
       used_count INTEGER NOT NULL DEFAULT 0 CHECK(used_count >= 0),
       status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled','recycled')),
       exhausted_at TEXT, recycled_at TEXT,
@@ -79,10 +81,11 @@ export function createDb(config) {
     CREATE INDEX IF NOT EXISTS redemptions_date ON redemptions(redeemed_at DESC);
   `);
 
-  // 旧库补列（新库建表即带 show_name）。
-  if (!db.prepare('PRAGMA table_info(voucher_codes)').all().some((col) => col.name === 'show_name')) {
-    db.exec('ALTER TABLE voucher_codes ADD COLUMN show_name INTEGER');
-  }
+  // 旧库补列（新库建表即带这些列）。逐列判断，缺哪列补哪列。
+  const codeColumnsNow = db.prepare('PRAGMA table_info(voucher_codes)').all().map((col) => col.name);
+  if (!codeColumnsNow.includes('show_name')) db.exec('ALTER TABLE voucher_codes ADD COLUMN show_name INTEGER');
+  if (!codeColumnsNow.includes('issued')) db.exec('ALTER TABLE voucher_codes ADD COLUMN issued INTEGER NOT NULL DEFAULT 0');
+  if (!codeColumnsNow.includes('issued_at')) db.exec('ALTER TABLE voucher_codes ADD COLUMN issued_at TEXT');
 
   // 注意：c.name 必须显式取别名，否则会覆盖券码自己的 v.name。
   const codeColumns = `v.*, c.name AS face_name, c.offer_text, c.description, c.instructions, c.store_text,
@@ -454,9 +457,21 @@ export function createDb(config) {
     return { rows, total };
   }
 
+  /** 标记「已发放」：运营用的轻量开关，两个角色都能改；值没变则什么都不做（不重复审计）。 */
+  function setCodeIssued(id, issued, actorId, sourceIp) {
+    const code = statement.codeById.get(id);
+    if (!code) return false;
+    const on = issued ? 1 : 0;
+    if (on === code.issued) return true;
+    const stamp = now();
+    db.prepare('UPDATE voucher_codes SET issued=?, issued_at=?, updated_at=? WHERE id=?').run(on, on ? stamp : null, stamp, id);
+    audit(actorId, on ? 'code.issued' : 'code.unissued', 'code', id, sourceIp);
+    return true;
+  }
+
   return {
     raw: db, hasSuperAdmin: () => Boolean(statement.hasSuper.get()), audit, couponState, codeState, getCouponByToken, createCoupon,
-    updateCoupon, setCouponStatus, createCode, createCodes, setCodeStatus, setCodeName, setCodeNote, redeem, recycleEligible, purgeRecycled, stats, retention,
+    updateCoupon, setCouponStatus, createCode, createCodes, setCodeStatus, setCodeName, setCodeNote, setCodeIssued, redeem, recycleEligible, purgeRecycled, stats, retention,
     // 券码名全局展示开关（PNG 与客人核销页是否带券码名）；单张券码的 show_name 可覆写。
     voucherDisplay: () => ({ showCodeName: getSetting('showCodeName', 'true') !== 'false' }),
     getCoupon: (id) => statement.couponWithCreator.get(id),

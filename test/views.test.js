@@ -221,6 +221,11 @@ test('券码详情：二维码、复制链接、PNG 与单独状态操作', () =
   assert.match(html, /action="\/admin\/codes\/cd-AbCdEfGh1234\/name"/, '可改券码名称');
   assert.match(html, /action="\/admin\/codes\/cd-AbCdEfGh1234\/note"/, '可单独改备注');
   assert.match(html, /已核销<\/dt><dd class="wide">1 \/ 3 次（剩余 2 次）/, '已核销在手机档独占一行（.wide）');
+  assert.match(html, /<div class="panel-head"><h2>券码信息<\/h2>[\s\S]{0,400}?<div class="head-actions"><form method="post" action="\/admin\/codes\/cd-AbCdEfGh1234\/issued" class="issued-form"><input type="hidden" name="_csrf" value="csrf-token"><label class="check issued-toggle"><input type="checkbox" name="issued" value="1" data-autosubmit>已发<\/label><\/form><\/div><\/div>/, '「已发放」开关放在券码信息卡片右上角，勾选即提交');
+  const issued = codeDetail({ user, code: codeOf({ issued: 1, issued_at: '2026-09-20T07:00:00.000Z' }), redemptions: [], csrf: 'csrf-token', flash: null });
+  assert.match(issued, /name="issued" value="1" data-autosubmit checked>已发/, '已发放时回显勾选');
+  assert.match(issued, /<small class="issued-at">09-20 15:00<\/small>/, '显示标记时间（省略年份与秒，只到分钟）');
+  assert.ok(!html.includes('<dt>已发放</dt>'), '开关不占详情行');
   assert.ok(!html.includes('/r/'), '后台页面不应直接暴露 Token 链接');
 
   const recycled = codeDetail({ user, code: codeOf({ status: 'recycled', current_state: 'recycled' }), redemptions: [], csrf: 'csrf-token', flash: null });
@@ -832,6 +837,10 @@ test('手机档：顶栏折叠菜单、表格卡片化与单列表单', () => {
   assert.match(css, /\.admin-body \.panel tr\.code-card>td\[data-label="已用"\]\{grid-row:2\/3;grid-column:2\/3/, '已用次数排到 ID 行右侧');
   const codeRowsHtml = couponDetail({ user, csrf: 'csrf-token', flash: null, coupon: faceOf(), codes: [codeOf()], redemptions: [] });
   assert.match(codeRowsHtml, /<tr class="code-card">/, '券码行标记 code-card');
+  assert.match(codeRowsHtml, /<th>已发放<\/th>/, '券码列表新增「已发放」列');
+  assert.match(codeRowsHtml, /action="\/admin\/codes\/cd-AbCdEfGh1234\/issued"[\s\S]{0,400}?data-autosubmit>已发<\/label>/, '列表里可直接勾选「已发」');
+  assert.match(css, /\.admin-body \.panel tr\.code-card>td\.issued-cell\{grid-row:3\/4;grid-column:1\/3;justify-self:start/, '手机档「已发」勾选框在卡片左下角');
+  assert.match(css, /\.admin-body \.panel tr\.code-card>\.row-ops\{grid-row:3\/4;grid-column:1\/3;justify-content:flex-end/, '操作按钮与勾选框同一行、靠右，且不被挤窄换行');
   assert.match(css, /\.mail>svg\{width:18px;height:18px;display:none\}/, '邮件状态图标默认隐藏（桌面看文字）');
   assert.match(css, /\.mail\.sent>svg\{color:var\(--good\)\}/, '送达=绿色信封');
   assert.match(css, /\.mail\.failed>svg\{color:var\(--bad\)\}/, '失败=红色信封');

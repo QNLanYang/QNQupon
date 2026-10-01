@@ -101,6 +101,29 @@ test('一次创建一张券码：ID 唯一、备注入库、可改名', () => {
   assert.equal(Number(log.target_id), face.id);
 });
 
+test('「已发放」开关：置位/复位、记录时间、幂等、审计可查', () => {
+  const face = newFace();
+  const code = db.createCode(face.id, '新春券', null, actor);
+  assert.equal(db.codeDetail(code.id).issued, 0, '新建券码默认未发放');
+  assert.equal(db.codeDetail(code.id).issued_at, null);
+
+  assert.equal(db.setCodeIssued(code.id, 1, actor, '10.0.0.1'), true);
+  const on = db.codeDetail(code.id);
+  assert.equal(on.issued, 1);
+  assert.ok(on.issued_at, '标记时记录时间');
+  assert.equal(db.setCodeIssued(code.id, true, actor, null), true, '重复标记同一值不报错');
+  assert.equal(db.codeDetail(code.id).issued_at, on.issued_at, '值没变就不重写时间（幂等）');
+  const log = db.raw.prepare("SELECT * FROM audit_log WHERE action='code.issued' ORDER BY id DESC LIMIT 1").get();
+  assert.equal(log.target_id, code.id, '标记已发放要进审计');
+  assert.equal(db.codeDetail(code.id).name, '新春券', '标记不影响券码名');
+
+  assert.equal(db.setCodeIssued(code.id, 0, actor, null), true);
+  assert.equal(db.codeDetail(code.id).issued, 0);
+  assert.equal(db.codeDetail(code.id).issued_at, null, '取消发放时清掉时间');
+  assert.equal(db.raw.prepare("SELECT * FROM audit_log WHERE action='code.unissued' ORDER BY id DESC LIMIT 1").get().target_id, code.id);
+  assert.equal(db.setCodeIssued('cd-nope', 1, actor, null), false, '不存在的券码返回 false');
+});
+
 test('券码名称留空：按「券面名 #序号」碰撞取号，能补空缺', () => {
   const face = newFace();
   const base = db.getCoupon(face.id).name; // 测试券

@@ -23,7 +23,7 @@ code{font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;f
 .form-panel .check.switch input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .field-hidden{display:none}.actions,.danger-row{display:flex;flex-wrap:wrap;gap:9px}.danger-row{margin-top:22px}.details{display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr);gap:9px 18px;margin:0}.details dt{color:var(--muted)}.details dd{margin:0;white-space:pre-wrap}.details dt.wide{grid-column:1/2}.details dd.wide{grid-column:2/-1}
 /* 详情行里的下拉（券码名显示）：做成「行内控件」——高度贴近一行文字（字号跟着收小），宽度跟内容走 */
-.details .details-form{margin:0;display:inline-flex}
+.details .details-form{margin:0;display:inline-flex}.issued-toggle{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap}.issued-toggle input{width:auto;margin:0}.issued-cell{white-space:nowrap}.issued-at{margin-left:8px;color:var(--muted)}
 .details .details-form select{width:auto;max-width:100%;margin:0;padding:1px 6px;border:1px solid var(--field-border);border-radius:8px;background:var(--field-bg);color:inherit;font:inherit;font-size:14px;line-height:1.3}.auth-card{width:100%;max-width:640px;margin:8vh auto}.auth-card h1{margin-top:0}.auth-card form{margin-top:20px}.form-error,.flash{padding:10px 13px;border-radius:10px;margin-bottom:18px}.form-error,.flash.error{background:var(--flash-err-bg);color:var(--flash-err-fg)}.flash.success{background:var(--flash-ok-bg);color:var(--flash-ok-fg)}.flash.info{background:var(--flash-info-bg);color:var(--flash-info-fg)}.result{padding:18px;border-radius:14px;margin-top:22px}.result.success{background:#dff6e9;color:#075f43}.result h2{margin:0 0 7px}.inline-form{display:flex;gap:8px;max-width:560px}.inline-form input{margin:0}@media(max-width:720px){.topbar{padding:12px 18px;flex-wrap:wrap;gap:12px}.topbar nav{order:3;flex-basis:100%;overflow:auto}.container{padding:22px 14px 0}.stats,.detail-grid,.form-grid{grid-template-columns:1fr 1fr}.panel{padding:14px}.public-body .container{padding-top:26px}.public-card{padding:25px}.inline-form{flex-direction:column}}@media(max-width:440px){.form-grid,.detail-grid{grid-template-columns:1fr}.coupon-meta{grid-template-columns:1fr}}
 
 /* ===== 手机档（≤640px）：收银机/手机是主要使用场景，操作必须顺畅 =====
@@ -86,7 +86,9 @@ code{font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;f
   .admin-body .panel tr.code-card>td[data-label="状态"]{position:static;grid-row:1/2;grid-column:2/3;justify-self:end;align-self:start;padding:0}
   .admin-body .panel tr.code-card>td[data-label="状态"]::before{content:none}
   .admin-body .panel tr.code-card>td[data-label="已用"]{grid-row:2/3;grid-column:2/3;justify-self:end;align-self:center;padding:0;font-size:13px;color:var(--muted)}
-  .admin-body .panel tr.code-card>.row-ops{grid-row:3/4;grid-column:1/3}
+  .admin-body .panel tr.code-card>td.issued-cell{grid-row:3/4;grid-column:1/3;justify-self:start;align-self:center}
+  .admin-body .panel tr.code-card>td.issued-cell::before{content:none}
+  .admin-body .panel tr.code-card>.row-ops{grid-row:3/4;grid-column:1/3;justify-content:flex-end}
   /* 核销记录卡片：第一行 时间 · 邮件图标 · 确认码；券面 / 券码 各自整行（行内左值、右小字）。
      整行占位让位置固定——不受名字长短、备注有无影响；右小字用 margin-left:auto 顶到行尾。 */
   .admin-body .panel tr.record-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
