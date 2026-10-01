@@ -79,6 +79,17 @@ export function createDb(config) {
     CREATE INDEX IF NOT EXISTS redemptions_coupon_date ON redemptions(coupon_id, redeemed_at DESC);
     CREATE INDEX IF NOT EXISTS redemptions_code_date ON redemptions(code_id, redeemed_at DESC);
     CREATE INDEX IF NOT EXISTS redemptions_date ON redemptions(redeemed_at DESC);
+    CREATE TABLE IF NOT EXISTS code_shares (
+      id INTEGER PRIMARY KEY,
+      code_id TEXT NOT NULL REFERENCES voucher_codes(id) ON DELETE CASCADE,
+      key_hash TEXT NOT NULL UNIQUE,
+      key_ciphertext TEXT NOT NULL,
+      face_fingerprint TEXT NOT NULL,
+      created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+      used_at TEXT, revoked_at TEXT,
+      created_by INTEGER REFERENCES users(id), source_ip TEXT
+    );
+    CREATE INDEX IF NOT EXISTS code_shares_live ON code_shares(code_id, used_at, revoked_at, expires_at);
   `);
 
   // 旧库补列（新库建表即带这些列）。逐列判断，缺哪列补哪列。
@@ -361,7 +372,69 @@ export function createDb(config) {
     const cutoff = new Date(Date.now() - retention().purgeDays * 86400000).toISOString();
     const codes = db.prepare("DELETE FROM voucher_codes WHERE status='recycled' AND recycled_at < ?").run(cutoff).changes;
     const faces = db.prepare("DELETE FROM coupons WHERE status='recycled' AND recycled_at < ?").run(cutoff).changes;
+    // 分享链接用完就没用了：作废/被取走/过期满 purgeDays 后直接删，留审计日志即可。
+    db.prepare(`DELETE FROM code_shares WHERE (revoked_at IS NOT NULL AND revoked_at < ?)
+      OR (used_at IS NOT NULL AND used_at < ?) OR (used_at IS NULL AND revoked_at IS NULL AND expires_at < ?)`)
+      .run(cutoff, cutoff, cutoff);
     return codes + faces;
+  }
+
+  // ---- 分享优惠券：一次性下载链接（后台生成，客人扫码/打开一次即失效，或 24 小时过期）----
+  const SHARE_TTL_MS = 24 * 60 * 60 * 1000;
+  /** 券面指纹：券图内容相关的全部字段。变了就说明客人拿到的和当初不是同一张券，旧链接不能再复用。 */
+  function shareFingerprint(code) {
+    return sha256([code.face_id, code.face_name, code.offer_text, code.description, code.instructions, code.store_text,
+      code.starts_on, code.expires_on, code.max_uses, code.name, code.note, code.show_name ?? ''].join('\u0001'));
+  }
+  /** 当前仍可用的分享（未用、未作废、未过期）；带解密后的明文 key（只在后台页面/二维码里用）。 */
+  function liveShare(codeId, at = now()) {
+    const row = db.prepare(`SELECT * FROM code_shares WHERE code_id=? AND used_at IS NULL AND revoked_at IS NULL AND expires_at>?
+      ORDER BY id DESC LIMIT 1`).get(codeId, at);
+    return row ? { ...row, key: decrypt(row.key_ciphertext, config.encryptionKey) } : null;
+  }
+  /** 生成或复用分享链接：已有「还没被取走且券面没变」的链接就复用并刷新到 24 小时；券面变了则作废旧链接后新建。 */
+  function createShare(codeId, actorId, sourceIp) {
+    const code = statement.codeById.get(codeId);
+    if (!code) throw new Error('券码不存在。');
+    const stamp = now();
+    const fingerprint = shareFingerprint(code);
+    const expiresAt = new Date(Date.now() + SHARE_TTL_MS).toISOString();
+    return db.transaction(() => {
+      const live = liveShare(codeId, stamp);
+      if (live && live.face_fingerprint === fingerprint) {
+        db.prepare('UPDATE code_shares SET expires_at=? WHERE id=?').run(expiresAt, live.id);
+        audit(actorId, 'share.refresh', 'code', codeId, sourceIp, { shareId: live.id, expiresAt });
+        return { key: live.key, expiresAt, reused: true };
+      }
+      let revoked = 0;
+      if (live) {
+        revoked = db.prepare('UPDATE code_shares SET revoked_at=? WHERE code_id=? AND used_at IS NULL AND revoked_at IS NULL').run(stamp, codeId).changes;
+        audit(actorId, 'share.revoke', 'code', codeId, sourceIp, { count: revoked, reason: 'face_changed' });
+      }
+      const key = randomToken();
+      const info = db.prepare(`INSERT INTO code_shares(code_id,key_hash,key_ciphertext,face_fingerprint,created_at,expires_at,created_by,source_ip)
+        VALUES(?,?,?,?,?,?,?,?)`)
+        .run(codeId, sha256(key), encrypt(key, config.encryptionKey), fingerprint, stamp, expiresAt, actorId || null, sourceIp || null);
+      audit(actorId, 'share.create', 'code', codeId, sourceIp, { shareId: info.lastInsertRowid, expiresAt, revoked });
+      return { key, expiresAt, reused: false };
+    })();
+  }
+  /** 取走券图：原子地把「未用、未作废、未过期」的那条置为已用；成功才发图，并顺手标记「已发放」。 */
+  function consumeShare(key, sourceIp) {
+    const stamp = now();
+    return db.transaction(() => {
+      const row = db.prepare('SELECT * FROM code_shares WHERE key_hash=?').get(sha256(String(key || '')));
+      if (!row) return { ok: false, reason: 'not_found' };
+      if (row.revoked_at) return { ok: false, reason: 'revoked' };
+      if (row.used_at) return { ok: false, reason: 'used', usedAt: row.used_at };
+      if (row.expires_at <= stamp) return { ok: false, reason: 'expired', expiresAt: row.expires_at };
+      const changed = db.prepare('UPDATE code_shares SET used_at=? WHERE id=? AND used_at IS NULL AND revoked_at IS NULL AND expires_at>?')
+        .run(stamp, row.id, stamp).changes;
+      if (changed !== 1) return { ok: false, reason: 'used' }; // 并发下被抢先
+      db.prepare('UPDATE voucher_codes SET issued=1, issued_at=COALESCE(issued_at, ?), updated_at=? WHERE id=?').run(stamp, stamp, row.code_id);
+      audit(null, 'share.use', 'code', row.code_id, sourceIp, { shareId: row.id });
+      return { ok: true, codeId: row.code_id };
+    })();
   }
 
   function stats() {
@@ -472,6 +545,7 @@ export function createDb(config) {
   return {
     raw: db, hasSuperAdmin: () => Boolean(statement.hasSuper.get()), audit, couponState, codeState, getCouponByToken, createCoupon,
     updateCoupon, setCouponStatus, createCode, createCodes, setCodeStatus, setCodeName, setCodeNote, setCodeIssued, redeem, recycleEligible, purgeRecycled, stats, retention,
+    createShare, liveShare, consumeShare,
     // 券码名全局展示开关（PNG 与客人核销页是否带券码名）；单张券码的 show_name 可覆写。
     voucherDisplay: () => ({ showCodeName: getSetting('showCodeName', 'true') !== 'false' }),
     getCoupon: (id) => statement.couponWithCreator.get(id),

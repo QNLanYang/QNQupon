@@ -115,7 +115,14 @@ const BRAND_SIZE = 50;
 export async function renderCouponPng(coupon, publicUrl, options = {}) {
   const theme = options.dark ? THEMES.dark : THEMES.light;
   const FONT = fontStack(options.font);
-  const qr = await QRCode.toBuffer(publicUrl, { errorCorrectionLevel: 'M', margin: 1, width: 480, color: { dark: '#101828', light: '#FFFFFFFF' } });
+  // 中心叠 favicon（白底圆衬垫），与后台页面上的二维码观感一致；纠错级别用 H，
+  // 遮住中间约 20% 也不影响识别。favicon 按模块路径读取，不依赖进程的工作目录。
+  const qrRaw = await QRCode.toBuffer(publicUrl, { errorCorrectionLevel: 'H', margin: 1, width: 480, color: { dark: '#101828', light: '#FFFFFFFF' } });
+  const { readFileSync } = await import('node:fs');
+  const mark = 96;
+  const ring = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${mark + 28}" height="${mark + 28}"><circle cx="${(mark + 28) / 2}" cy="${(mark + 28) / 2}" r="${(mark + 28) / 2}" fill="#ffffff"/></svg>`);
+  const logo = await sharp(readFileSync(new URL('../public/favicon.svg', import.meta.url))).resize(mark, mark, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+  const qr = await sharp(qrRaw).composite([{ input: ring, gravity: 'center' }, { input: logo, gravity: 'center' }]).png().toBuffer();
   const body = [];
 
   // 估宽（与 wrap 同口径：CJK 1 字宽、ASCII 半字宽）

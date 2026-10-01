@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { login, publicCoupon, usersPage, presetsPage, couponDetail, codeDetail, forbidden, couponsPage, recyclePage, dashboard, couponForm, profilePage, verifyPage, rateLimited, settingsPage, redemptionsPage, auditPage, home, beijingTime } from '../src/views.js';
+import { login, publicCoupon, usersPage, presetsPage, couponDetail, codeDetail, forbidden, couponsPage, recyclePage, dashboard, couponForm, profilePage, verifyPage, rateLimited, settingsPage, redemptionsPage, auditPage, home, beijingTime, shareDownload, shareGone } from '../src/views.js';
 
 const faceOf = (over = {}) => ({
   id: 7, name: '券', offer_text: 'x', description: null, instructions: null, store_text: null,
@@ -226,6 +226,16 @@ test('券码详情：二维码、复制链接、PNG 与单独状态操作', () =
   assert.match(issued, /name="issued" value="1" data-autosubmit checked>已发/, '已发放时回显勾选');
   assert.match(issued, /<small class="issued-at">09-20 15:00<\/small>/, '显示标记时间（省略年份与秒，只到分钟）');
   assert.ok(!html.includes('<dt>已发放</dt>'), '开关不占详情行');
+  const shared = codeDetail({ user, code: codeOf(), redemptions: [], csrf: 'csrf-token', flash: null, share: { expiresAt: '2026-10-02T00:00:00.000Z' } });
+  assert.match(html, /data-popover-toggle aria-expanded="false" aria-controls="code-share">分享优惠券<\/button>/, '「分享优惠券」是卡片右上角的浮窗开关');
+  assert.match(html, /id="code-share" data-keep-open hidden>[\s\S]{0,700}?<button class="primary" type="submit">生成分享链接<\/button>/, '没有有效分享时浮窗里是「生成分享链接」；浮窗刷新后保持展开');
+  assert.ok(!html.includes('/share/qrcode'), '没有有效分享时不渲染二维码');
+  assert.ok(!html.includes('share-url'), '分享说明收进 ❓，页内不再有说明段落');
+  assert.match(html, /<figure class="qr-box"><span class="qr-frame"><img src="\/admin\/codes\/cd-AbCdEfGh1234\/qrcode" width="150" height="150" alt="核销二维码"><img class="qr-logo" src="\/assets\/favicon\.svg"[^>]*><\/span><figcaption class="qr-label">专属核销二维码<\/figcaption>/, '类别标签收进二维码框；框与二维码同尺寸（logo 以此为基准）');
+  assert.match(shared, /<figure class="qr-box"><span class="qr-frame"><img src="\/admin\/codes\/cd-AbCdEfGh1234\/share\/qrcode" width="150" height="150" alt="分享二维码">/, '分享二维码与核销二维码同尺寸、同一个框');
+  assert.match(shared, /<\/figure><p class="share-expire">打开一次即失效 · 有效期至 2026-10-02 08:00<\/p>/, '有效期放在框外（框内只留类别标签）');
+  assert.ok(!shared.includes('share-key'), '页面里不出现明文 key/分享链接');
+  assert.match(shared, /<button class="secondary" type="submit">刷新有效期<\/button>/, '已有链接时按钮变成刷新有效期');
   assert.ok(!html.includes('/r/'), '后台页面不应直接暴露 Token 链接');
 
   const recycled = codeDetail({ user, code: codeOf({ status: 'recycled', current_state: 'recycled' }), redemptions: [], csrf: 'csrf-token', flash: null });
@@ -233,6 +243,17 @@ test('券码详情：二维码、复制链接、PNG 与单独状态操作', () =
   assert.match(recycled, /action="\/admin\/codes\/cd-AbCdEfGh1234\/purge"/, '超管可永久删除券码');
   const bizRecycled = codeDetail({ user: { ...user, role: 'business_admin' }, code: codeOf({ status: 'recycled', current_state: 'recycled' }), redemptions: [], csrf: 'csrf-token', flash: null });
   assert.ok(!bizRecycled.includes('/purge'), '业务管理员不能永久删除券码');
+});
+
+test('分享链接页：有背景与提示、券图内联、失效有说明', () => {
+  const html = shareDownload({ imageBase64: 'AAAA', fileName: '优惠券.png', codeName: '张三的券' });
+  assert.match(html, /<img class="share-image" src="data:image\/png;base64,AAAA"/, '券图内联进页面（data:），不再只是一张裸图');
+  assert.match(html, /download="优惠券\.png"/, '提供「保存图片」按钮');
+  assert.match(html, /只会出现一次/, '提醒先保存：关掉链接就失效了');
+  assert.match(html, /class="public-body"/, '走公开页外壳（有页面背景与主题）');
+  const gone = shareGone({ message: '这个分享链接已经被打开过了，只能下载一次。' });
+  assert.match(gone, /分享链接失效/);
+  assert.match(gone, /已经被打开过/);
 });
 
 test('券码被券面停用时给出联动提示', () => {
@@ -841,6 +862,9 @@ test('手机档：顶栏折叠菜单、表格卡片化与单列表单', () => {
   assert.match(codeRowsHtml, /action="\/admin\/codes\/cd-AbCdEfGh1234\/issued"[\s\S]{0,400}?data-autosubmit>已发<\/label>/, '列表里可直接勾选「已发」');
   assert.match(css, /\.admin-body \.panel tr\.code-card>td\.issued-cell\{grid-row:3\/4;grid-column:1\/3;justify-self:start/, '手机档「已发」勾选框在卡片左下角');
   assert.match(css, /\.admin-body \.panel tr\.code-card>\.row-ops\{grid-row:3\/4;grid-column:1\/3;justify-content:flex-end/, '操作按钮与勾选框同一行、靠右，且不被挤窄换行');
+  assert.match(css, /\.danger-row\{margin-top:22px;align-items:center\}/, '危险行按钮垂直居中对齐（停用/删除 y 一致）');
+  const js = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  assert.ok(!/row\.checked !== el\.checked/.test(js), '页内刷新不再还原勾选框状态（以服务端渲染为准）');
   assert.match(css, /\.mail>svg\{width:18px;height:18px;display:none\}/, '邮件状态图标默认隐藏（桌面看文字）');
   assert.match(css, /\.mail\.sent>svg\{color:var\(--good\)\}/, '送达=绿色信封');
   assert.match(css, /\.mail\.failed>svg\{color:var\(--bad\)\}/, '失败=红色信封');
@@ -929,7 +953,10 @@ test('手机按钮收紧、设置页双列与开关、账号页与测试邮件',
   assert.match(css, /\.form-panel \.check\.switch input\{appearance:none;-webkit-appearance:none;width:44px;height:26px/, '布尔开关用现代开关 UI');
   assert.match(css, /\.form-panel \.check\.switch input:checked\{background:var\(--accent\)/, '开关打开时用强调色');
   assert.match(css, /\.modal-input\{width:100%;margin-top:12px/, '弹窗内嵌输入框样式');
-  assert.match(css, /\.qr-preview img\{display:block;width:150px;height:150px;padding:11px;border:1px solid var\(--line\);border-radius:7px;background:#fff\}/, '二维码外框不变、圆角减半、二维码略缩');
+  assert.match(css, /\.qr-box\{display:flex;flex-direction:column;align-items:center;width:max-content;margin:0;padding:11px 11px 17px;border:1px solid var\(--line\)/, '二维码外框按内容定宽、纵向加高，标签居中且离底边有余量');
+  assert.match(css, /\.qr-frame\{position:relative;display:block;width:150px;height:150px/, 'logo 以二维码自身为坐标基准（框与二维码同尺寸）');
+  assert.match(css, /\.qr-frame \.qr-logo\{position:absolute;left:50%;top:50%;transform:translate\(-50%,-50%\)/, '所有二维码中心叠 favicon 图标（配白底圆形衬垫）');
+  assert.match(css, /\.qr-label\{display:block;margin-top:9px;color:#5b667a;font-size:12px;font-weight:normal/, '类别标签：小字、灰色、不加粗');
   assert.match(css, /\.qr-preview \.actions\{display:flex;flex-direction:column;gap:8px;align-items:stretch/, '打开/下载/预览按钮竖排在二维码右边');
   assert.match(css, /code\{font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;font-size:\.92em;letter-spacing:\.08em;background:var\(--code-bg\);border:1px solid var\(--code-border-sm\);border-radius:999px/, '确认码/券码 ID 用等宽胶囊包裹、字距略放宽');
   assert.match(css, /\.admin-body \.panel td\.row-ops\{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end/, '手机档操作按钮靠右');

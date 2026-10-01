@@ -365,7 +365,8 @@ function restoreFields(snapshot, submittedAction) {
     const row = snapshot.get(`${key}|${index}`);
     if (!row) continue;
     if (row.value !== el.value) el.value = row.value;
-    if (row.checked !== el.checked) el.checked = row.checked;
+    // 勾选框/单选框不还原：它们改一下就提交（data-autosubmit），状态应由服务端渲染说了算；
+    // 否则页内刷新会把本地旧状态盖回去，看起来像「刷新不生效（只拉到发放时间）」。snapshot 里的 checked 已不再使用。
   }
 }
 
@@ -376,12 +377,20 @@ function swapMain(next) {
   const nextMain = next.querySelector('main.container');
   const currentMain = document.querySelector('main.container');
   if (!nextMain || !currentMain) return false;
+  // 标了 data-keep-open 的浮窗（「分享优惠券」）在局部刷新后要自动展开：生成链接是一次普通 POST，
+  // 换页后正好应该直接把二维码亮出来，而不是让用户再点一次。
+  const keepOpen = [...document.querySelectorAll('.popover:not([hidden])[data-keep-open]')].map((el) => el.id).filter(Boolean);
   const footer = currentMain.querySelector('.site-footer');
   nextMain.querySelector('.site-footer')?.remove();
   if (footer) nextMain.appendChild(footer);
   const nextHost = next.querySelector('[data-toast-host]');
   if (nextHost) document.querySelector('[data-toast-host]')?.replaceWith(nextHost);
   currentMain.replaceWith(nextMain);
+  for (const id of keepOpen) {
+    const panel = document.getElementById(id);
+    const button = document.querySelector(`[data-popover-toggle][aria-controls="${id}"]`);
+    if (panel && button) { panel.hidden = false; button.setAttribute('aria-expanded', 'true'); }
+  }
   document.title = next.title;
   syncPopoverMask(); // 局部刷新会连浮窗一起换掉，遮罩要跟着收，否则页面一直发暗
   return true;

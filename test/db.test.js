@@ -124,6 +124,50 @@ test('「已发放」开关：置位/复位、记录时间、幂等、审计可�
   assert.equal(db.setCodeIssued('cd-nope', 1, actor, null), false, '不存在的券码返回 false');
 });
 
+test('分享链接：生成、复用刷新、券面变了作废重建、一次有效、超时不算已发放', () => {
+  const face = newFace();
+  const code = db.createCode(face.id, '分享测试券', null, actor);
+
+  const first = db.createShare(code.id, actor, '10.0.0.1');
+  assert.equal(first.reused, false);
+  assert.ok(first.key && first.key.length >= 20, '生成随机 key');
+  assert.ok(db.liveShare(code.id), '能查到有效分享');
+  assert.equal(db.codeDetail(code.id).issued, 0, '只是生成链接，不算已发放');
+
+  const again = db.createShare(code.id, actor, null);
+  assert.equal(again.reused, true, '未过期又没被用过 → 复用');
+  assert.equal(again.key, first.key, '复用同一条链接（key 不变）');
+  assert.ok(Date.parse(again.expiresAt) >= Date.parse(first.expiresAt), '有效期被刷新');
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM code_shares WHERE code_id=?").get(code.id).n, 1, '复用不产生新行');
+
+  // 券面内容改了 → 旧链接作废、换新链接
+  db.raw.prepare('UPDATE coupons SET offer_text=? WHERE id=?').run('改过的优惠内容', face.id);
+  const third = db.createShare(code.id, actor, null);
+  assert.equal(third.reused, false, '券面变了不复用');
+  assert.notEqual(third.key, first.key);
+  assert.equal(db.consumeShare(first.key, '9.9.9.9').reason, 'revoked', '旧链接已作废');
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM code_shares WHERE code_id=?").get(code.id).n, 2, '旧行保留（作废）而不是删除');
+
+  // 取走一次
+  const hit = db.consumeShare(third.key, '9.9.9.9');
+  assert.equal(hit.ok, true);
+  assert.equal(hit.codeId, code.id);
+  assert.equal(db.codeDetail(code.id).issued, 1, '券图被取走 → 自动标记已发放');
+  assert.ok(db.codeDetail(code.id).issued_at, '同时记下时间');
+  assert.equal(db.consumeShare(third.key, '9.9.9.9').reason, 'used', '只能下载一次');
+  assert.equal(db.consumeShare('nope', null).reason, 'not_found');
+
+  // 只是超时过期：不算已发放
+  const code2 = db.createCode(face.id, '超时券', null, actor);
+  const s2 = db.createShare(code2.id, actor, null);
+  db.raw.prepare('UPDATE code_shares SET expires_at=? WHERE code_id=?').run('2020-01-01T00:00:00.000Z', code2.id);
+  assert.equal(db.consumeShare(s2.key, null).reason, 'expired');
+  assert.equal(db.codeDetail(code2.id).issued, 0, '超时过期不算已发放');
+
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action='share.create'").get().n >= 2, true, 'share.create 进审计');
+  assert.equal(db.raw.prepare("SELECT action FROM audit_log WHERE action='share.use' ORDER BY id DESC LIMIT 1").get().action, 'share.use');
+});
+
 test('券码名称留空：按「券面名 #序号」碰撞取号，能补空缺', () => {
   const face = newFace();
   const base = db.getCoupon(face.id).name; // 测试券
