@@ -124,6 +124,41 @@ test('「已发放」开关：置位/复位、记录时间、幂等、审计可�
   assert.equal(db.setCodeIssued('cd-nope', 1, actor, null), false, '不存在的券码返回 false');
 });
 
+test('旧库升级：启动自动补 show_name/issued/issued_at 列并建 code_shares 表，数据不丢、新功能可用', () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'qnqupon-upgrade-')), 'old.db');
+  // 先按当前结构建库、放点数据，再把它「退回旧版本的样子」
+  const old = createDb({ databasePath: path, encryptionKey: 'test-encryption-key' });
+  const actorId = Number(old.createUser('old', hashPassword('Test-password-2026'), 'super_admin').lastInsertRowid);
+  const face = old.createCoupon({ name: '老券面', offerText: '老优惠', maxUses: 2 }, actorId);
+  const code = old.createCode(face.id, '老券码', '老备注', actorId);
+  old.raw.exec('ALTER TABLE voucher_codes DROP COLUMN show_name');
+  old.raw.exec('ALTER TABLE voucher_codes DROP COLUMN issued');
+  old.raw.exec('ALTER TABLE voucher_codes DROP COLUMN issued_at');
+  old.raw.exec('DROP TABLE code_shares');
+  old.raw.close();
+
+  // 用新版代码重新打开同一个文件：应当自动补列 + 建表
+  const up = createDb({ databasePath: path, encryptionKey: 'test-encryption-key' });
+  const cols = up.raw.prepare('PRAGMA table_info(voucher_codes)').all().map((c) => c.name);
+  assert.ok(cols.includes('show_name'), '补上 show_name');
+  assert.ok(cols.includes('issued') && cols.includes('issued_at'), '补上 issued / issued_at');
+  assert.equal(up.raw.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='code_shares'").get().name, 'code_shares', '建出 code_shares');
+  const kept = up.codeDetail(code.id);
+  assert.equal(kept.name, '老券码', '旧数据保留');
+  assert.equal(kept.note, '老备注');
+  assert.equal(kept.issued, 0, '补列默认未发放');
+  assert.equal(up.codesOf(face.id).length, 1, '券码还在');
+
+  // 升级后新功能立即可用
+  up.setCodeIssued(code.id, 1, actorId, null);
+  assert.equal(up.codeDetail(code.id).issued, 1);
+  const share = up.createShare(code.id, actorId, null);
+  assert.ok(share.key && up.liveShare(code.id), '升级后的券码能直接生成分享链接');
+  assert.equal(up.consumeShare(share.key, null).ok, true);
+  assert.equal(up.codeDetail(code.id).issued, 1, '取走后仍为已发放');
+  up.raw.close();
+});
+
 test('分享链接：生成、复用刷新、券面变了作废重建、一次有效、超时不算已发放', () => {
   const face = newFace();
   const code = db.createCode(face.id, '分享测试券', null, actor);

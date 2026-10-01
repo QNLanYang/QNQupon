@@ -231,7 +231,7 @@ test('券码详情：二维码、复制链接、PNG 与单独状态操作', () =
   assert.match(html, /id="code-share" data-keep-open hidden>[\s\S]{0,700}?<button class="primary" type="submit">生成分享链接<\/button>/, '没有有效分享时浮窗里是「生成分享链接」；浮窗刷新后保持展开');
   assert.ok(!html.includes('/share/qrcode'), '没有有效分享时不渲染二维码');
   assert.ok(!html.includes('share-url'), '分享说明收进 ❓，页内不再有说明段落');
-  assert.match(html, /<figure class="qr-box"><span class="qr-frame"><img src="\/admin\/codes\/cd-AbCdEfGh1234\/qrcode" width="150" height="150" alt="核销二维码"><img class="qr-logo" src="\/assets\/favicon\.svg"[^>]*><\/span><figcaption class="qr-label">专属核销二维码<\/figcaption>/, '类别标签收进二维码框；框与二维码同尺寸（logo 以此为基准）');
+  assert.match(html, /<figure class="qr-box"><span class="qr-frame"><img src="\/admin\/codes\/cd-AbCdEfGh1234\/qrcode" width="150" height="150" alt="核销二维码"><\/span><figcaption class="qr-label">专属核销二维码<\/figcaption>/, '类别标签收进二维码框；logo 已改为由 src/qr.js 生成在二维码图里，页面不再叠加');
   assert.match(shared, /<figure class="qr-box"><span class="qr-frame"><img src="\/admin\/codes\/cd-AbCdEfGh1234\/share\/qrcode" width="150" height="150" alt="分享二维码">/, '分享二维码与核销二维码同尺寸、同一个框');
   assert.match(shared, /<\/figure><p class="share-expire">打开一次即失效 · 有效期至 2026-10-02 08:00<\/p>/, '有效期放在框外（框内只留类别标签）');
   assert.ok(!shared.includes('share-key'), '页面里不出现明文 key/分享链接');
@@ -955,7 +955,10 @@ test('手机按钮收紧、设置页双列与开关、账号页与测试邮件',
   assert.match(css, /\.modal-input\{width:100%;margin-top:12px/, '弹窗内嵌输入框样式');
   assert.match(css, /\.qr-box\{display:flex;flex-direction:column;align-items:center;width:max-content;margin:0;padding:11px 11px 17px;border:1px solid var\(--line\)/, '二维码外框按内容定宽、纵向加高，标签居中且离底边有余量');
   assert.match(css, /\.qr-frame\{position:relative;display:block;width:150px;height:150px/, 'logo 以二维码自身为坐标基准（框与二维码同尺寸）');
-  assert.match(css, /\.qr-frame \.qr-logo\{position:absolute;left:50%;top:50%;transform:translate\(-50%,-50%\)/, '所有二维码中心叠 favicon 图标（配白底圆形衬垫）');
+  const qrSrc = readFileSync(new URL('../src/qr.js', import.meta.url), 'utf8');
+  assert.match(qrSrc, /ICON_MODULES = 6/, '中心图标固定 6 个色块宽');
+  assert.match(qrSrc, /PAD_MODULES = 0\.5/, '衬垫每边 0.5 个色块（整体 7，落在模块网格上）');
+  assert.ok(!/qr-logo/.test(css), '页面不再用 CSS 叠加 logo：二维码（含图标）统一由 src/qr.js 生成');
   assert.match(css, /\.qr-label\{display:block;margin-top:9px;color:#5b667a;font-size:12px;font-weight:normal/, '类别标签：小字、灰色、不加粗');
   assert.match(css, /\.qr-preview \.actions\{display:flex;flex-direction:column;gap:8px;align-items:stretch/, '打开/下载/预览按钮竖排在二维码右边');
   assert.match(css, /code\{font-family:ui-monospace,"Cascadia Mono",Consolas,"Courier New",monospace;font-size:\.92em;letter-spacing:\.08em;background:var\(--code-bg\);border:1px solid var\(--code-border-sm\);border-radius:999px/, '确认码/券码 ID 用等宽胶囊包裹、字距略放宽');
